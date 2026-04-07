@@ -3,42 +3,59 @@
 import { useEffect, useMemo, useState } from "react";
 import WeekendFlowPanel from "@/components/race/WeekendFlowPanel";
 import {
+  applyWeekendToSeason,
+  createInitialSeasonState,
+} from "@/lib/season";
+import {
   completeWeekendPractice,
   completeWeekendQualifying,
+  completeWeekendRace,
+  completeWeekendPostRace,
   createWeekend,
+  markWeekendRewardsApplied,
   setWeekendActiveDriver,
   setWeekendStrategy,
   setWeekendTraining,
 } from "@/lib/weekend";
+import { buildWeekendPostRaceResult } from "@/lib/weekendPostRace";
 import { simulateWeekendPractice } from "@/lib/weekendPractice";
 import {
   formatSessionLabel,
   getWeekendSessionInfo,
 } from "@/lib/weekendSession";
 import { simulateWeekendQualifying } from "@/lib/weekendQualifying";
+import { simulateWeekendRace } from "@/lib/weekendRace";
+import type { SeasonState } from "@/types/season";
 import type { WeekendState } from "@/types/weekend";
 import type { WeekendPracticeResult } from "@/types/weekendPractice";
-import type { WeekendQualifyingResult, WeekendTrainingSelection } from "@/types/weekendQualifying";
+import type {
+  WeekendQualifyingResult,
+  WeekendTrainingSelection,
+} from "@/types/weekendQualifying";
+import type { WeekendRaceResult } from "@/types/weekendRace";
+import type { WeekendPostRaceResult } from "@/types/weekendPostRace";
 
-function createDemoSchedule() {
-  const now = Date.now();
-
+function createStableDemoSchedule() {
   return {
-    practiceAt: new Date(now + 2 * 60 * 1000).toISOString(),
-    qualifyingAt: new Date(now + 4 * 60 * 1000).toISOString(),
-    raceAt: new Date(now + 6 * 60 * 1000).toISOString(),
+    practiceAt: "2026-04-10T18:00:00.000Z",
+    qualifyingAt: "2026-04-11T15:00:00.000Z",
+    raceAt: "2026-04-12T16:00:00.000Z",
   };
 }
 
 function createInitialWeekend(): WeekendState<
   WeekendTrainingSelection,
   WeekendPracticeResult,
-  WeekendQualifyingResult
+  WeekendQualifyingResult,
+  WeekendRaceResult,
+  WeekendPostRaceResult
 > {
   return createWeekend<
     WeekendTrainingSelection,
     WeekendPracticeResult,
-    WeekendQualifyingResult
+    WeekendQualifyingResult,
+    WeekendRaceResult,
+    WeekendPostRaceResult
   >({
     id: "weekend-1",
     season: 1,
@@ -46,9 +63,13 @@ function createInitialWeekend(): WeekendState<
     teamId: "starter-team",
     circuitId: "melbourne",
     weatherId: "sunny",
-    schedule: createDemoSchedule(),
+    schedule: createStableDemoSchedule(),
     activeDriverId: "driver-1",
   });
+}
+
+function formatIsoForDisplay(iso: string): string {
+  return iso.replace("T", " ").replace(".000Z", " UTC");
 }
 
 export default function HomePage() {
@@ -56,13 +77,23 @@ export default function HomePage() {
     WeekendState<
       WeekendTrainingSelection,
       WeekendPracticeResult,
-      WeekendQualifyingResult
+      WeekendQualifyingResult,
+      WeekendRaceResult,
+      WeekendPostRaceResult
     >
   >(() => createInitialWeekend());
 
-  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [seasonState, setSeasonState] = useState<SeasonState>(() =>
+    createInitialSeasonState(1)
+  );
+
+  const [isMounted, setIsMounted] = useState(false);
+  const [nowMs, setNowMs] = useState(0);
 
   useEffect(() => {
+    setIsMounted(true);
+    setNowMs(Date.now());
+
     const interval = window.setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
@@ -73,8 +104,12 @@ export default function HomePage() {
   }, []);
 
   const sessionInfo = useMemo(() => {
+    if (!isMounted) {
+      return getWeekendSessionInfo(weekend, 0);
+    }
+
     return getWeekendSessionInfo(weekend, nowMs);
-  }, [weekend, nowMs]);
+  }, [weekend, nowMs, isMounted]);
 
   const summary = useMemo(() => {
     return {
@@ -88,9 +123,16 @@ export default function HomePage() {
       practiceCompleted: weekend.practice.isCompleted,
       qualifyingCompleted: weekend.qualifying.isCompleted,
       raceCompleted: weekend.race.isCompleted,
+      postRaceCompleted: weekend.postRace.isCompleted,
+      rewardsApplied: weekend.postRace.rewardsApplied,
+      raceFinishPosition: weekend.race.result?.finishPosition ?? null,
+      creditsEarned: weekend.postRace.result?.rewards.creditsEarned ?? null,
+      seasonCurrentRound: seasonState.currentRound,
+      driverStandings: seasonState.driverStandings,
+      teamStandings: seasonState.teamStandings,
       schedule: weekend.schedule,
     };
-  }, [sessionInfo, weekend]);
+  }, [sessionInfo, weekend, seasonState]);
 
   function handleSelectDriver(driverId: string) {
     if (!sessionInfo.permissions.canChangeDriver) {
@@ -172,9 +214,86 @@ export default function HomePage() {
     });
   }
 
+  function handleRunRace() {
+    setWeekend((current) => {
+      const currentInfo = getWeekendSessionInfo(current, Date.now());
+
+      if (currentInfo.currentSession !== "race") {
+        return current;
+      }
+
+      if (current.race.isCompleted) {
+        return current;
+      }
+
+      if (!current.activeDriverId) {
+        return current;
+      }
+
+      const result = simulateWeekendRace({
+        teamId: current.teamId,
+        circuitId: current.circuitId,
+        weatherId: current.weatherId,
+        activeDriverId: current.activeDriverId,
+        strategyPresetId: current.strategyPresetId,
+        qualifyingPosition: current.qualifying.result?.playerPosition ?? null,
+        practiceBoosts: current.practice.result?.boosts ?? null,
+      });
+
+      return completeWeekendRace(current, result);
+    });
+  }
+
+  function handleApplyPostRace() {
+    setWeekend((current) => {
+      if (!current.race.isCompleted) {
+        return current;
+      }
+
+      if (!current.race.result) {
+        return current;
+      }
+
+      if (current.postRace.rewardsApplied) {
+        return current;
+      }
+
+      const postRaceResult = buildWeekendPostRaceResult(current.race.result);
+      const withPostRace = completeWeekendPostRace(current, postRaceResult);
+      return markWeekendRewardsApplied(withPostRace);
+    });
+
+    setSeasonState((currentSeason) => {
+      if (!weekend.race.result || !weekend.postRace.result && !weekend.race.isCompleted) {
+        return currentSeason;
+      }
+
+      const raceResult = weekend.race.result;
+      const derivedPostRace =
+        weekend.postRace.result ?? (raceResult ? buildWeekendPostRaceResult(raceResult) : null);
+
+      if (!raceResult || !derivedPostRace) {
+        return currentSeason;
+      }
+
+      return applyWeekendToSeason({
+        seasonState: currentSeason,
+        weekendId: weekend.id,
+        round: weekend.round,
+        circuitId: weekend.circuitId,
+        raceResult,
+        postRaceResult: derivedPostRace,
+      });
+    });
+  }
+
   function handleResetWeekend() {
     setWeekend(createInitialWeekend());
-    setNowMs(Date.now());
+    setSeasonState(createInitialSeasonState(1));
+
+    if (isMounted) {
+      setNowMs(Date.now());
+    }
   }
 
   return (
@@ -210,7 +329,7 @@ export default function HomePage() {
                 Practice At
               </p>
               <p className="mt-1 text-sm text-white">
-                {new Date(weekend.schedule.practiceAt).toLocaleString()}
+                {formatIsoForDisplay(weekend.schedule.practiceAt)}
               </p>
             </div>
 
@@ -219,7 +338,7 @@ export default function HomePage() {
                 Qualifying At
               </p>
               <p className="mt-1 text-sm text-white">
-                {new Date(weekend.schedule.qualifyingAt).toLocaleString()}
+                {formatIsoForDisplay(weekend.schedule.qualifyingAt)}
               </p>
             </div>
 
@@ -228,7 +347,7 @@ export default function HomePage() {
                 Race At
               </p>
               <p className="mt-1 text-sm text-white">
-                {new Date(weekend.schedule.raceAt).toLocaleString()}
+                {formatIsoForDisplay(weekend.schedule.raceAt)}
               </p>
             </div>
           </div>
@@ -236,8 +355,9 @@ export default function HomePage() {
 
         <WeekendFlowPanel
           weekend={weekend}
+          seasonState={seasonState}
           currentSession={sessionInfo.currentSession}
-          countdownMs={sessionInfo.countdownMs}
+          countdownMs={isMounted ? sessionInfo.countdownMs : null}
           nextSessionLabel={
             sessionInfo.nextSession ? formatSessionLabel(sessionInfo.nextSession) : null
           }
@@ -247,6 +367,8 @@ export default function HomePage() {
           onSetStrategy={handleSetStrategy}
           onRunPractice={handleRunPractice}
           onRunQualifying={handleRunQualifying}
+          onRunRace={handleRunRace}
+          onApplyPostRace={handleApplyPostRace}
         />
 
         <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">

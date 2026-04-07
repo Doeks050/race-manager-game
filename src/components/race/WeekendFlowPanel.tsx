@@ -1,11 +1,14 @@
 "use client";
 
+import type { SeasonState } from "@/types/season";
 import type { WeekendState } from "@/types/weekend";
 import type {
   WeekendPermissions,
   WeekendSessionName,
 } from "@/types/weekendSession";
 import type { WeekendPracticeResult } from "@/types/weekendPractice";
+import type { WeekendRaceResult } from "@/types/weekendRace";
+import type { WeekendPostRaceResult } from "@/types/weekendPostRace";
 import type {
   WeekendQualifyingResult,
   WeekendTrainingSelection,
@@ -18,13 +21,18 @@ import {
   formatSessionLabel,
 } from "@/lib/weekendSession";
 import { formatLapTime } from "@/lib/weekendQualifying";
+import { formatRaceTime } from "@/lib/weekendRace";
+import { getChampionshipPoints } from "@/lib/season";
 
 interface WeekendFlowPanelProps {
   weekend: WeekendState<
     WeekendTrainingSelection,
     WeekendPracticeResult,
-    WeekendQualifyingResult
+    WeekendQualifyingResult,
+    WeekendRaceResult,
+    WeekendPostRaceResult
   >;
+  seasonState: SeasonState;
   currentSession: WeekendSessionName;
   countdownMs: number | null;
   nextSessionLabel: string | null;
@@ -34,6 +42,8 @@ interface WeekendFlowPanelProps {
   onSetStrategy: (strategyPresetId: string) => void;
   onRunPractice: () => void;
   onRunQualifying: () => void;
+  onRunRace: () => void;
+  onApplyPostRace: () => void;
 }
 
 const DRIVER_OPTIONS = [
@@ -109,7 +119,7 @@ function getSessionStatusText(session: WeekendSessionName): string {
     case "parc_ferme":
       return "Parc fermé is active. Only race strategy can still be changed.";
     case "race":
-      return "Race is live. All management actions are locked.";
+      return "Race is live. The race can now be run.";
     case "post_race_management":
       return "Race weekend is finished. Full management is open again.";
     default:
@@ -119,6 +129,7 @@ function getSessionStatusText(session: WeekendSessionName): string {
 
 export default function WeekendFlowPanel({
   weekend,
+  seasonState,
   currentSession,
   countdownMs,
   nextSessionLabel,
@@ -128,6 +139,8 @@ export default function WeekendFlowPanel({
   onSetStrategy,
   onRunPractice,
   onRunQualifying,
+  onRunRace,
+  onApplyPostRace,
 }: WeekendFlowPanelProps) {
   const currentTraining =
     weekend.trainingPlan ?? ({
@@ -140,6 +153,8 @@ export default function WeekendFlowPanel({
   const selectedStrategyId = weekend.strategyPresetId ?? "balanced-2-stop";
   const practiceResult = weekend.practice.result;
   const qualifyingResult = weekend.qualifying.result;
+  const raceResult = weekend.race.result;
+  const postRaceResult = weekend.postRace.result;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
@@ -669,6 +684,325 @@ export default function WeekendFlowPanel({
               No qualifying result yet.
             </div>
           )}
+        </div>
+      </section>
+
+      <section className={getCardClassName()}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-white">Race Result</p>
+            <p className="mt-1 text-sm text-neutral-400">
+              Sunday race uses your grid spot, Friday gains and locked race strategy.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onRunRace}
+            disabled={currentSession !== "race" || weekend.race.isCompleted}
+            className={[
+              "rounded-2xl px-4 py-3 text-sm font-semibold transition",
+              currentSession !== "race" || weekend.race.isCompleted
+                ? "cursor-not-allowed border border-neutral-800 bg-neutral-900 text-neutral-500"
+                : "border border-white bg-white text-black hover:opacity-90",
+            ].join(" ")}
+          >
+            {weekend.race.isCompleted ? "Race Completed" : "Run Race"}
+          </button>
+        </div>
+
+        {raceResult ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-[320px_1fr]">
+            <div className="flex flex-col gap-4">
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">
+                  Finish
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-white">
+                  P{raceResult.finishPosition}
+                </p>
+                <p className="mt-2 text-sm text-neutral-300">
+                  Started: <span className="text-white">P{raceResult.startPosition}</span>
+                </p>
+                <p className="mt-1 text-sm text-neutral-300">
+                  Positions gained:{" "}
+                  <span className="text-white">
+                    {raceResult.positionsGained >= 0 ? "+" : ""}
+                    {raceResult.positionsGained}
+                  </span>
+                </p>
+                <p className="mt-1 text-sm text-neutral-300">
+                  Championship points:{" "}
+                  <span className="text-white">
+                    {getChampionshipPoints(raceResult.finishPosition)}
+                  </span>
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">
+                  Race Pace
+                </p>
+                <p className="mt-2 text-sm text-neutral-300">
+                  Total time:{" "}
+                  <span className="text-white">{formatRaceTime(raceResult.totalRaceTimeMs)}</span>
+                </p>
+                <p className="mt-1 text-sm text-neutral-300">
+                  Average lap:{" "}
+                  <span className="text-white">{formatLapTime(raceResult.averageLapTimeMs)}</span>
+                </p>
+                <p className="mt-1 text-sm text-neutral-300">
+                  Strategy: <span className="text-white">{raceResult.strategyPresetId}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">
+                  Stints
+                </p>
+
+                <div className="mt-3 flex flex-col gap-3">
+                  {raceResult.stints.map((stint) => (
+                    <div
+                      key={stint.index}
+                      className="rounded-xl border border-neutral-800 bg-black p-3"
+                    >
+                      <p className="text-sm font-medium text-white">
+                        Stint {stint.index} · {stint.tyreCompoundId}
+                      </p>
+                      <p className="mt-1 text-sm text-neutral-300">
+                        Laps {stint.startLap}-{stint.endLap} · {stint.lapCount} laps
+                      </p>
+                      <p className="mt-1 text-sm text-neutral-300">
+                        Avg lap: {formatLapTime(stint.averageLapTimeMs)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">
+                  Race Events
+                </p>
+
+                {raceResult.events.length > 0 ? (
+                  <div className="mt-3 flex flex-col gap-3">
+                    {raceResult.events.map((event, index) => (
+                      <div
+                        key={`${event.type}-${event.lap}-${index}`}
+                        className="rounded-xl border border-neutral-800 bg-black p-3"
+                      >
+                        <p className="text-sm font-medium text-white">
+                          Lap {event.lap} · {event.label}
+                        </p>
+                        <p className="mt-1 text-sm text-neutral-300">
+                          Delta: {event.timeDeltaMs >= 0 ? "+" : ""}
+                          {(event.timeDeltaMs / 1000).toFixed(3)}s
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-neutral-800 bg-black p-3 text-sm text-neutral-400">
+                    No major race events triggered.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-sm text-neutral-400">
+            No race result yet.
+          </div>
+        )}
+      </section>
+
+      <section className={getCardClassName()}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-white">Post-Race Processing</p>
+            <p className="mt-1 text-sm text-neutral-400">
+              Apply rewards, XP, morale, fitness loss and part wear after the race.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onApplyPostRace}
+            disabled={!weekend.race.isCompleted || weekend.postRace.rewardsApplied}
+            className={[
+              "rounded-2xl px-4 py-3 text-sm font-semibold transition",
+              !weekend.race.isCompleted || weekend.postRace.rewardsApplied
+                ? "cursor-not-allowed border border-neutral-800 bg-neutral-900 text-neutral-500"
+                : "border border-white bg-white text-black hover:opacity-90",
+            ].join(" ")}
+          >
+            {weekend.postRace.rewardsApplied ? "Post-Race Applied" : "Apply Post-Race"}
+          </button>
+        </div>
+
+        {postRaceResult ? (
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+              <p className="text-xs uppercase tracking-wide text-neutral-500">
+                Rewards
+              </p>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-neutral-500">Credits</p>
+                  <p className="mt-1 text-sm text-white">
+                    +{postRaceResult.rewards.creditsEarned}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-neutral-500">Driver XP</p>
+                  <p className="mt-1 text-sm text-white">
+                    +{postRaceResult.rewards.driverXpEarned}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-neutral-500">Morale</p>
+                  <p className="mt-1 text-sm text-white">
+                    {postRaceResult.rewards.moraleChange >= 0 ? "+" : ""}
+                    {postRaceResult.rewards.moraleChange}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-neutral-500">Fitness Loss</p>
+                  <p className="mt-1 text-sm text-white">
+                    -{postRaceResult.rewards.fitnessLoss}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+              <p className="text-xs uppercase tracking-wide text-neutral-500">
+                Part Wear
+              </p>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div><p className="text-xs text-neutral-500">Engine</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.engine}</p></div>
+                <div><p className="text-xs text-neutral-500">Gearbox</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.gearbox}</p></div>
+                <div><p className="text-xs text-neutral-500">Chassis</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.chassis}</p></div>
+                <div><p className="text-xs text-neutral-500">Front Wing</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.frontWing}</p></div>
+                <div><p className="text-xs text-neutral-500">Rear Wing</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.rearWing}</p></div>
+                <div><p className="text-xs text-neutral-500">Suspension</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.suspension}</p></div>
+                <div><p className="text-xs text-neutral-500">Brakes</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.brakes}</p></div>
+                <div><p className="text-xs text-neutral-500">Cooling</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.cooling}</p></div>
+                <div><p className="text-xs text-neutral-500">Floor</p><p className="mt-1 text-sm text-white">+{postRaceResult.partWear.floor}</p></div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 lg:col-span-2">
+              <p className="text-xs uppercase tracking-wide text-neutral-500">
+                Weekend Summary
+              </p>
+
+              <div className="mt-3 flex flex-col gap-2">
+                {postRaceResult.summaryLines.map((line, index) => (
+                  <p key={index} className="text-sm text-neutral-300">
+                    • {line}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-sm text-neutral-400">
+            No post-race processing applied yet.
+          </div>
+        )}
+      </section>
+
+      <section className={getCardClassName()}>
+        <p className="text-sm font-semibold text-white">Season Standings</p>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Driver Championship
+            </p>
+
+            {seasonState.driverStandings.length > 0 ? (
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="text-neutral-500">
+                    <tr>
+                      <th className="pb-2 pr-4 font-medium">Pos</th>
+                      <th className="pb-2 pr-4 font-medium">Driver</th>
+                      <th className="pb-2 pr-4 font-medium">Pts</th>
+                      <th className="pb-2 pr-4 font-medium">W</th>
+                      <th className="pb-2 pr-4 font-medium">Pod</th>
+                      <th className="pb-2 pr-4 font-medium">R</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {seasonState.driverStandings.map((entry, index) => (
+                      <tr key={entry.driverId} className="text-neutral-300">
+                        <td className="py-2 pr-4">{index + 1}</td>
+                        <td className="py-2 pr-4">{entry.driverName}</td>
+                        <td className="py-2 pr-4">{entry.points}</td>
+                        <td className="py-2 pr-4">{entry.wins}</td>
+                        <td className="py-2 pr-4">{entry.podiums}</td>
+                        <td className="py-2 pr-4">{entry.races}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xl border border-neutral-800 bg-black p-3 text-sm text-neutral-400">
+                No driver standings yet.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Team Championship
+            </p>
+
+            {seasonState.teamStandings.length > 0 ? (
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="text-neutral-500">
+                    <tr>
+                      <th className="pb-2 pr-4 font-medium">Pos</th>
+                      <th className="pb-2 pr-4 font-medium">Team</th>
+                      <th className="pb-2 pr-4 font-medium">Pts</th>
+                      <th className="pb-2 pr-4 font-medium">W</th>
+                      <th className="pb-2 pr-4 font-medium">Pod</th>
+                      <th className="pb-2 pr-4 font-medium">R</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {seasonState.teamStandings.map((entry, index) => (
+                      <tr key={entry.teamId} className="text-neutral-300">
+                        <td className="py-2 pr-4">{index + 1}</td>
+                        <td className="py-2 pr-4">{entry.teamName}</td>
+                        <td className="py-2 pr-4">{entry.points}</td>
+                        <td className="py-2 pr-4">{entry.wins}</td>
+                        <td className="py-2 pr-4">{entry.podiums}</td>
+                        <td className="py-2 pr-4">{entry.races}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xl border border-neutral-800 bg-black p-3 text-sm text-neutral-400">
+                No team standings yet.
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </div>
