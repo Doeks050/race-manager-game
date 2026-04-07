@@ -1,87 +1,70 @@
-import type { WeekendSchedule } from "@/types/weekendSession";
+import type { Circuit } from "./car";
+import type { WeatherType } from "./race";
+import type { WeekendSchedule } from "./weekendSession";
+import type {
+  WeekendPracticeResult,
+  WeekendPracticeState,
+} from "./weekendPractice";
+import type {
+  WeekendQualifyingResult,
+  WeekendQualifyingState,
+  WeekendTrainingSelection,
+} from "./weekendQualifying";
+import type { WeekendRaceResult, WeekendRaceState } from "./weekendRace";
+import type {
+  WeekendPostRaceResult,
+  WeekendPostRaceState,
+} from "./weekendPostRace";
 
-export type WeekendStatus = "active" | "completed";
+export type CreateWeekendInput = {
+  id: string;
+  seasonId: string;
+  teamId: string;
+  round: number;
+  teamName: string;
+  circuit: Circuit;
+  weather: WeatherType;
+  activeDriverId: string;
+  strategyPresetId: string;
+  trainingSelection: WeekendTrainingSelection;
+  schedule: WeekendSchedule;
+};
 
-export interface WeekendPracticeState<PracticeResult = unknown> {
-  isCompleted: boolean;
-  result: PracticeResult | null;
-  completedAt: string | null;
-}
+export type WeekendState = {
+  id: string;
+  seasonId: string;
+  teamId: string;
+  round: number;
+  teamName: string;
+  circuit: Circuit;
+  weather: WeatherType;
+  activeDriverId: string;
+  strategyPresetId: string;
+  trainingSelection: WeekendTrainingSelection;
+  schedule: WeekendSchedule;
 
-export interface WeekendQualifyingState<QualifyingResult = unknown> {
-  isCompleted: boolean;
-  result: QualifyingResult | null;
-  completedAt: string | null;
-}
+  practice: WeekendPracticeState;
+  qualifying: WeekendQualifyingState;
+  race: WeekendRaceState;
+  postRace: WeekendPostRaceState;
 
-export interface WeekendRaceState<RaceResult = unknown> {
-  isCompleted: boolean;
-  result: RaceResult | null;
-  completedAt: string | null;
-}
-
-export interface WeekendPostRaceState<PostRaceResult = unknown> {
-  isCompleted: boolean;
   rewardsApplied: boolean;
-  result: PostRaceResult | null;
-  completedAt: string | null;
-}
+};
 
-export interface WeekendState<
-  TrainingPlan = unknown,
-  PracticeResult = unknown,
-  QualifyingResult = unknown,
-  RaceResult = unknown,
-  PostRaceResult = unknown
-> {
+export type WeekendSummary = {
   id: string;
-  season: number;
   round: number;
-
-  teamId: string;
-  circuitId: string;
-  weatherId: string;
-
-  status: WeekendStatus;
-  activeDriverId: string | null;
-
-  schedule: WeekendSchedule;
-
-  trainingPlan: TrainingPlan | null;
-  strategyPresetId: string | null;
-
-  practice: WeekendPracticeState<PracticeResult>;
-  qualifying: WeekendQualifyingState<QualifyingResult>;
-  race: WeekendRaceState<RaceResult>;
-  postRace: WeekendPostRaceState<PostRaceResult>;
-
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateWeekendInput {
-  id: string;
-  season: number;
-  round: number;
-  teamId: string;
-  circuitId: string;
-  weatherId: string;
-  schedule: WeekendSchedule;
-  activeDriverId?: string | null;
-}
-
-export interface WeekendSummary {
-  id: string;
-  season: number;
-  round: number;
-  circuitId: string;
-  weatherId: string;
-  status: WeekendStatus;
-  activeDriverId: string | null;
-  strategyPresetId: string | null;
-  hasTrainingPlan: boolean;
+  circuitName: string;
+  weather: WeatherType;
+  activeDriverId: string;
+  strategyPresetId: string;
   practiceCompleted: boolean;
   qualifyingCompleted: boolean;
   raceCompleted: boolean;
   postRaceCompleted: boolean;
-}
+  rewardsApplied: boolean;
+  practiceResult: WeekendPracticeResult | null;
+  qualifyingResult: WeekendQualifyingResult | null;
+  raceResult: WeekendRaceResult | null;
+  postRaceResult: WeekendPostRaceResult | null;
+};
