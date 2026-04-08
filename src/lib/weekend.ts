@@ -1,159 +1,396 @@
-import type { WeekendPostRaceResult } from "@/types/weekendPostRace";
-import type { WeekendPracticeResult } from "@/types/weekendPractice";
-import type { WeekendQualifyingResult } from "@/types/weekendQualifying";
-import type { WeekendRaceResult } from "@/types/weekendRace";
+import { createDefaultRaceStrategy } from "@/lib/raceStrategy";
 import type {
   CreateWeekendInput,
+  DriverWeekendSetup,
   WeekendState,
   WeekendSummary,
 } from "@/types/weekend";
-import type { WeekendTrainingSelection } from "@/types/weekendQualifying";
 
-export function createWeekend(input: CreateWeekendInput): WeekendState {
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function touchWeekend<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  return {
+    ...weekend,
+    updatedAt: nowIso(),
+  };
+}
+
+function buildDriverSetups<TrainingPlan = unknown>(
+  driverIds: string[]
+): Record<string, DriverWeekendSetup<TrainingPlan>> {
+  return driverIds.reduce<Record<string, DriverWeekendSetup<TrainingPlan>>>(
+    (acc, driverId) => {
+      acc[driverId] = {
+        driverId,
+        trainingPlan: null,
+        raceStrategy: createDefaultRaceStrategy(2),
+      };
+      return acc;
+    },
+    {}
+  );
+}
+
+function buildEmptyResultMap<ResultType = unknown>(
+  driverIds: string[]
+): Record<string, ResultType | null> {
+  return driverIds.reduce<Record<string, ResultType | null>>((acc, driverId) => {
+    acc[driverId] = null;
+    return acc;
+  }, {});
+}
+
+export function createWeekend<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  input: CreateWeekendInput
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  const timestamp = nowIso();
+  const driverIds = input.driverIds ?? ["driver-1", "driver-2"];
+
   return {
     id: input.id,
-    seasonId: input.seasonId,
-    teamId: input.teamId,
+    season: input.season,
     round: input.round,
-    teamName: input.teamName,
-    circuit: input.circuit,
-    weather: input.weather,
-    activeDriverId: input.activeDriverId,
-    strategyPresetId: input.strategyPresetId,
-    trainingSelection: input.trainingSelection,
+    teamId: input.teamId,
+    circuitId: input.circuitId,
+    weatherId: input.weatherId,
+    status: "active",
+    activeDriverId: input.activeDriverId ?? driverIds[0] ?? null,
+    driverIds,
+    driverSetups: buildDriverSetups<TrainingPlan>(driverIds),
     schedule: input.schedule,
 
     practice: {
-      completed: false,
-      result: null,
+      isCompleted: false,
+      resultsByDriver: buildEmptyResultMap<PracticeResult>(driverIds),
+      completedAt: null,
     },
 
     qualifying: {
-      completed: false,
-      result: null,
+      isCompleted: false,
+      resultsByDriver: buildEmptyResultMap<QualifyingResult>(driverIds),
+      completedAt: null,
     },
 
     race: {
-      completed: false,
-      result: null,
+      isCompleted: false,
+      resultsByDriver: buildEmptyResultMap<RaceResult>(driverIds),
+      completedAt: null,
     },
 
     postRace: {
-      completed: false,
-      result: null,
+      isCompleted: false,
+      rewardsApplied: false,
+      resultsByDriver: buildEmptyResultMap<PostRaceResult>(driverIds),
+      completedAt: null,
     },
 
-    rewardsApplied: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
   };
 }
 
-export function setWeekendTraining(
-  weekend: WeekendState,
-  trainingSelection: WeekendTrainingSelection
-): WeekendState {
-  return {
+export function setWeekendDriverTraining<
+  TrainingPlan,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >,
+  driverId: string,
+  trainingPlan: TrainingPlan
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  const existingSetup = weekend.driverSetups[driverId];
+
+  if (!existingSetup) {
+    return weekend;
+  }
+
+  return touchWeekend({
     ...weekend,
-    trainingSelection,
-  };
+    driverSetups: {
+      ...weekend.driverSetups,
+      [driverId]: {
+        ...existingSetup,
+        trainingPlan,
+      },
+    },
+  });
 }
 
-export function setWeekendStrategy(
-  weekend: WeekendState,
-  strategyPresetId: string
-): WeekendState {
-  return {
+export function setWeekendDriverStrategy<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >,
+  driverId: string,
+  raceStrategy: DriverWeekendSetup<TrainingPlan>["raceStrategy"]
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  const existingSetup = weekend.driverSetups[driverId];
+
+  if (!existingSetup) {
+    return weekend;
+  }
+
+  return touchWeekend({
     ...weekend,
-    strategyPresetId,
-  };
+    driverSetups: {
+      ...weekend.driverSetups,
+      [driverId]: {
+        ...existingSetup,
+        raceStrategy,
+      },
+    },
+  });
 }
 
-export function setWeekendActiveDriver(
-  weekend: WeekendState,
-  activeDriverId: string
-): WeekendState {
-  return {
-    ...weekend,
-    activeDriverId,
-  };
-}
-
-export function completeWeekendPractice(
-  weekend: WeekendState,
-  result: WeekendPracticeResult
-): WeekendState {
-  return {
+export function completeWeekendPractice<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >,
+  resultsByDriver: Record<string, PracticeResult | null>
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  return touchWeekend({
     ...weekend,
     practice: {
-      completed: true,
-      result,
+      isCompleted: true,
+      resultsByDriver,
+      completedAt: nowIso(),
     },
-  };
+  });
 }
 
-export function completeWeekendQualifying(
-  weekend: WeekendState,
-  result: WeekendQualifyingResult
-): WeekendState {
-  return {
+export function completeWeekendQualifying<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >,
+  resultsByDriver: Record<string, QualifyingResult | null>
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  return touchWeekend({
     ...weekend,
     qualifying: {
-      completed: true,
-      result,
+      isCompleted: true,
+      resultsByDriver,
+      completedAt: nowIso(),
     },
-  };
+  });
 }
 
-export function completeWeekendRace(
-  weekend: WeekendState,
-  result: WeekendRaceResult
-): WeekendState {
-  return {
+export function completeWeekendRace<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >,
+  resultsByDriver: Record<string, RaceResult | null>
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  return touchWeekend({
     ...weekend,
     race: {
-      completed: true,
-      result,
+      isCompleted: true,
+      resultsByDriver,
+      completedAt: nowIso(),
     },
-  };
+  });
 }
 
-export function completeWeekendPostRace(
-  weekend: WeekendState,
-  result: WeekendPostRaceResult
-): WeekendState {
-  return {
+export function completeWeekendPostRace<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >,
+  resultsByDriver: Record<string, PostRaceResult | null>
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  return touchWeekend({
     ...weekend,
     postRace: {
-      completed: true,
-      result,
+      ...weekend.postRace,
+      isCompleted: true,
+      resultsByDriver,
+      completedAt: nowIso(),
     },
-  };
+  });
 }
 
-export function markWeekendRewardsApplied(
-  weekend: WeekendState
-): WeekendState {
-  return {
+export function markWeekendRewardsApplied<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >
+): WeekendState<
+  TrainingPlan,
+  PracticeResult,
+  QualifyingResult,
+  RaceResult,
+  PostRaceResult
+> {
+  return touchWeekend({
     ...weekend,
-    rewardsApplied: true,
-  };
+    postRace: {
+      ...weekend.postRace,
+      rewardsApplied: true,
+    },
+  });
 }
 
-export function getWeekendSummary(weekend: WeekendState): WeekendSummary {
+export function getWeekendSummary<
+  TrainingPlan = unknown,
+  PracticeResult = unknown,
+  QualifyingResult = unknown,
+  RaceResult = unknown,
+  PostRaceResult = unknown
+>(
+  weekend: WeekendState<
+    TrainingPlan,
+    PracticeResult,
+    QualifyingResult,
+    RaceResult,
+    PostRaceResult
+  >
+): WeekendSummary {
   return {
     id: weekend.id,
+    season: weekend.season,
     round: weekend.round,
-    circuitName: weekend.circuit.name,
-    weather: weekend.weather,
+    circuitId: weekend.circuitId,
+    weatherId: weekend.weatherId,
+    status: weekend.status,
     activeDriverId: weekend.activeDriverId,
-    strategyPresetId: weekend.strategyPresetId,
-    practiceCompleted: weekend.practice.completed,
-    qualifyingCompleted: weekend.qualifying.completed,
-    raceCompleted: weekend.race.completed,
-    postRaceCompleted: weekend.postRace.completed,
-    rewardsApplied: weekend.rewardsApplied,
-    practiceResult: weekend.practice.result,
-    qualifyingResult: weekend.qualifying.result,
-    raceResult: weekend.race.result,
-    postRaceResult: weekend.postRace.result,
+    driverIds: weekend.driverIds,
+    practiceCompleted: weekend.practice.isCompleted,
+    qualifyingCompleted: weekend.qualifying.isCompleted,
+    raceCompleted: weekend.race.isCompleted,
+    postRaceCompleted: weekend.postRace.isCompleted,
   };
 }

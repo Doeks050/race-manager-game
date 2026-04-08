@@ -1,12 +1,21 @@
+import {
+  buildRaceStintPlan,
+  normalizeRaceStrategy,
+} from "@/lib/raceStrategy";
+import type { DriverRaceStrategy } from "@/types/raceStrategy";
+import type {
+  WeekendRaceEvent,
+  WeekendRaceResult,
+  WeekendRaceStint,
+} from "@/types/weekendRace";
 import type { WeekendPracticeBoosts } from "@/types/weekendPractice";
-import type { WeekendRaceEvent, WeekendRaceResult, WeekendRaceStint } from "@/types/weekendRace";
 
 interface SimulateWeekendRaceInput {
   teamId: string;
   circuitId: string;
   weatherId: string;
   activeDriverId: string;
-  strategyPresetId: string | null;
+  raceStrategy: DriverRaceStrategy;
   qualifyingPosition: number | null;
   practiceBoosts: WeekendPracticeBoosts | null;
 }
@@ -18,17 +27,17 @@ function randomBetween(min: number, max: number): number {
 function getBaseLapTimeMs(circuitId: string): number {
   switch (circuitId) {
     case "melbourne":
-      return 86_000;
+      return 86000;
     case "bahrain":
-      return 94_200;
+      return 94200;
     case "jeddah":
-      return 91_400;
+      return 91400;
     case "monza":
-      return 83_900;
+      return 83900;
     case "monaco":
-      return 76_500;
+      return 76500;
     default:
-      return 88_500;
+      return 88500;
   }
 }
 
@@ -58,69 +67,14 @@ function getWeatherLapAdjustmentMs(weatherId: string): number {
     case "cold":
       return 260;
     case "light-rain":
-      return 2_600;
+      return 2600;
     case "heavy-rain":
-      return 6_200;
+      return 6200;
     case "mixed":
-      return 1_800;
+      return 1800;
     default:
       return 0;
   }
-}
-
-function getStrategyPlan(strategyPresetId: string | null, raceLaps: number) {
-  if (strategyPresetId === "aggressive-soft-start") {
-    return [
-      {
-        tyreCompoundId: "soft",
-        lapCount: Math.max(14, Math.floor(raceLaps * 0.28)),
-        lapAdjustmentMs: -220,
-      },
-      {
-        tyreCompoundId: "medium",
-        lapCount: Math.max(18, Math.floor(raceLaps * 0.36)),
-        lapAdjustmentMs: 20,
-      },
-      {
-        tyreCompoundId: "hard",
-        lapCount: raceLaps - Math.max(14, Math.floor(raceLaps * 0.28)) - Math.max(18, Math.floor(raceLaps * 0.36)),
-        lapAdjustmentMs: 240,
-      },
-    ];
-  }
-
-  if (strategyPresetId === "long-run-medium") {
-    return [
-      {
-        tyreCompoundId: "medium",
-        lapCount: Math.max(20, Math.floor(raceLaps * 0.42)),
-        lapAdjustmentMs: 40,
-      },
-      {
-        tyreCompoundId: "hard",
-        lapCount: raceLaps - Math.max(20, Math.floor(raceLaps * 0.42)),
-        lapAdjustmentMs: 260,
-      },
-    ];
-  }
-
-  return [
-    {
-      tyreCompoundId: "medium",
-      lapCount: Math.max(18, Math.floor(raceLaps * 0.34)),
-      lapAdjustmentMs: 0,
-    },
-    {
-      tyreCompoundId: "hard",
-      lapCount: Math.max(16, Math.floor(raceLaps * 0.30)),
-      lapAdjustmentMs: 230,
-    },
-    {
-      tyreCompoundId: "medium",
-      lapCount: raceLaps - Math.max(18, Math.floor(raceLaps * 0.34)) - Math.max(16, Math.floor(raceLaps * 0.30)),
-      lapAdjustmentMs: 60,
-    },
-  ];
 }
 
 function buildPracticeAdjustment(boosts: WeekendPracticeBoosts | null): number {
@@ -141,7 +95,10 @@ function buildGridAdjustment(startPosition: number): number {
   return 520;
 }
 
-function buildRandomRaceEvents(raceLaps: number, weatherId: string): WeekendRaceEvent[] {
+function buildRandomRaceEvents(
+  raceLaps: number,
+  weatherId: string
+): WeekendRaceEvent[] {
   const events: WeekendRaceEvent[] = [];
   const rolls = Math.random();
 
@@ -163,7 +120,11 @@ function buildRandomRaceEvents(raceLaps: number, weatherId: string): WeekendRace
     });
   }
 
-  if (weatherId === "light-rain" || weatherId === "heavy-rain" || weatherId === "mixed") {
+  if (
+    weatherId === "light-rain" ||
+    weatherId === "heavy-rain" ||
+    weatherId === "mixed"
+  ) {
     if (Math.random() > 0.58) {
       events.push({
         lap: Math.max(6, Math.floor(randomBetween(6, raceLaps - 6))),
@@ -190,10 +151,10 @@ function buildStints(
   raceLaps: number,
   baseLapTimeMs: number,
   weatherId: string,
-  strategyPresetId: string | null,
+  raceStrategy: DriverRaceStrategy,
   practiceBoosts: WeekendPracticeBoosts | null
 ): WeekendRaceStint[] {
-  const plan = getStrategyPlan(strategyPresetId, raceLaps);
+  const plan = buildRaceStintPlan(raceStrategy, raceLaps);
   const weatherAdjustment = getWeatherLapAdjustmentMs(weatherId);
   const practiceAdjustment = buildPracticeAdjustment(practiceBoosts);
 
@@ -212,7 +173,8 @@ function buildStints(
         variance
     );
 
-    const totalTimeMs = averageLapTimeMs * part.lapCount + (index > 0 ? 22_500 : 0);
+    const totalTimeMs =
+      averageLapTimeMs * part.lapCount + (index > 0 ? 22500 : 0);
 
     stints.push({
       index: index + 1,
@@ -242,22 +204,21 @@ function determineFinishPosition(
 
   let movement = 0;
 
-  if (delta < -14_000) movement += 4;
-  else if (delta < -8_000) movement += 3;
-  else if (delta < -4_000) movement += 2;
-  else if (delta < -1_500) movement += 1;
+  if (delta < -14000) movement += 4;
+  else if (delta < -8000) movement += 3;
+  else if (delta < -4000) movement += 2;
+  else if (delta < -1500) movement += 1;
 
-  if (delta > 16_000) movement -= 4;
-  else if (delta > 10_000) movement -= 3;
-  else if (delta > 5_000) movement -= 2;
-  else if (delta > 2_000) movement -= 1;
+  if (delta > 16000) movement -= 4;
+  else if (delta > 10000) movement -= 3;
+  else if (delta > 5000) movement -= 2;
+  else if (delta > 2000) movement -= 1;
 
   if (practiceBoosts && practiceBoosts.raceBonusPct >= 2.5) {
     movement += 1;
   }
 
-  const finishPosition = Math.max(1, Math.min(20, startPosition - movement));
-  return finishPosition;
+  return Math.max(1, Math.min(20, startPosition - movement));
 }
 
 export function formatRaceTime(ms: number): string {
@@ -267,7 +228,9 @@ export function formatRaceTime(ms: number): string {
   const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${seconds.toFixed(3).padStart(6, "0")}`;
+    return `${hours}:${String(minutes).padStart(2, "0")}:${seconds
+      .toFixed(3)
+      .padStart(6, "0")}`;
   }
 
   return `${minutes}:${seconds.toFixed(3).padStart(6, "0")}`;
@@ -279,12 +242,13 @@ export function simulateWeekendRace(
   const raceLaps = getRaceLaps(input.circuitId);
   const baseLapTimeMs = getBaseLapTimeMs(input.circuitId);
   const startPosition = input.qualifyingPosition ?? 12;
+  const normalizedStrategy = normalizeRaceStrategy(input.raceStrategy);
 
   const stints = buildStints(
     raceLaps,
     baseLapTimeMs,
     input.weatherId,
-    input.strategyPresetId,
+    normalizedStrategy,
     input.practiceBoosts
   );
 
@@ -316,7 +280,7 @@ export function simulateWeekendRace(
     positionsGained: startPosition - finishPosition,
     totalRaceTimeMs,
     averageLapTimeMs,
-    strategyPresetId: input.strategyPresetId ?? "balanced-2-stop",
+    raceStrategy: normalizedStrategy,
     practiceBoosts: input.practiceBoosts,
     stints,
     events: raceEvents,

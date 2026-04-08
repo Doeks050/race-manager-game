@@ -4,7 +4,6 @@ import type {
   SeasonState,
   TeamStandingEntry,
 } from "@/types/season";
-import type { WeekendPostRaceResult } from "@/types/weekendPostRace";
 import type { WeekendRaceResult } from "@/types/weekendRace";
 
 const CHAMPIONSHIP_POINTS_TABLE: Record<number, number> = {
@@ -50,6 +49,24 @@ export function createInitialSeasonState(season: number): SeasonState {
     teamStandings: [],
     roundResults: [],
   };
+}
+
+function sortDriverStandings(standings: DriverStandingEntry[]): DriverStandingEntry[] {
+  return [...standings].sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    if (b.podiums !== a.podiums) return b.podiums - a.podiums;
+    return a.driverName.localeCompare(b.driverName);
+  });
+}
+
+function sortTeamStandings(standings: TeamStandingEntry[]): TeamStandingEntry[] {
+  return [...standings].sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    if (b.podiums !== a.podiums) return b.podiums - a.podiums;
+    return a.teamName.localeCompare(b.teamName);
+  });
 }
 
 function upsertDriverStanding(
@@ -127,31 +144,12 @@ function upsertTeamStanding(
   );
 }
 
-function sortDriverStandings(standings: DriverStandingEntry[]): DriverStandingEntry[] {
-  return [...standings].sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    if (b.podiums !== a.podiums) return b.podiums - a.podiums;
-    return a.driverName.localeCompare(b.driverName);
-  });
-}
-
-function sortTeamStandings(standings: TeamStandingEntry[]): TeamStandingEntry[] {
-  return [...standings].sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    if (b.podiums !== a.podiums) return b.podiums - a.podiums;
-    return a.teamName.localeCompare(b.teamName);
-  });
-}
-
 export interface ApplyWeekendToSeasonInput {
   seasonState: SeasonState;
   weekendId: string;
   round: number;
   circuitId: string;
-  raceResult: WeekendRaceResult;
-  postRaceResult: WeekendPostRaceResult;
+  raceResults: WeekendRaceResult[];
 }
 
 export function applyWeekendToSeason({
@@ -159,29 +157,39 @@ export function applyWeekendToSeason({
   weekendId,
   round,
   circuitId,
-  raceResult,
+  raceResults,
 }: ApplyWeekendToSeasonInput): SeasonState {
   if (seasonState.processedWeekendIds.includes(weekendId)) {
     return seasonState;
   }
 
-  const pointsEarned = getChampionshipPoints(raceResult.finishPosition);
+  let nextDriverStandings = seasonState.driverStandings;
+  let nextTeamStandings = seasonState.teamStandings;
 
-  const roundResult: SeasonRoundResult = {
-    round,
-    circuitId,
-    driverId: raceResult.playerDriverId,
-    teamId: raceResult.playerTeamId,
-    finishPosition: raceResult.finishPosition,
-    pointsEarned,
-  };
+  const roundResults: SeasonRoundResult[] = raceResults.map((raceResult) => {
+    const pointsEarned = getChampionshipPoints(raceResult.finishPosition);
+
+    const roundResult: SeasonRoundResult = {
+      round,
+      circuitId,
+      driverId: raceResult.playerDriverId,
+      teamId: raceResult.playerTeamId,
+      finishPosition: raceResult.finishPosition,
+      pointsEarned,
+    };
+
+    nextDriverStandings = upsertDriverStanding(nextDriverStandings, roundResult);
+    nextTeamStandings = upsertTeamStanding(nextTeamStandings, roundResult);
+
+    return roundResult;
+  });
 
   return {
     ...seasonState,
     currentRound: Math.max(seasonState.currentRound, round + 1),
     processedWeekendIds: [...seasonState.processedWeekendIds, weekendId],
-    roundResults: [...seasonState.roundResults, roundResult],
-    driverStandings: upsertDriverStanding(seasonState.driverStandings, roundResult),
-    teamStandings: upsertTeamStanding(seasonState.teamStandings, roundResult),
+    roundResults: [...seasonState.roundResults, ...roundResults],
+    driverStandings: nextDriverStandings,
+    teamStandings: nextTeamStandings,
   };
 }

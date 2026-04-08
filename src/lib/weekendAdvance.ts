@@ -1,153 +1,116 @@
-import { circuits } from "@/data/circuits";
-import { getCalendarEntryForRound } from "@/data/weekendCalendar";
+import { getLastCalendarRound, getWeekendCalendarEntry } from "@/data/weekendCalendar";
 import { createWeekend } from "@/lib/weekend";
 import type { SeasonState } from "@/types/season";
-import type { Team } from "@/types/team";
-import type { WeatherType } from "@/types/race";
 import type { WeekendState } from "@/types/weekend";
+import type { WeekendSchedule } from "@/types/weekendSession";
 
-type GenerateNextWeekendInput = {
+export interface AdvanceToNextWeekendInput {
   currentWeekend: WeekendState;
-  season: SeasonState;
-  team: Team;
-};
-
-type AdvanceWeekendResult = {
-  season: SeasonState;
-  weekend: WeekendState;
-};
-
-function getNextRound(currentRound: number): number {
-  return currentRound + 1;
+  seasonState: SeasonState;
 }
 
-function pickWeatherForRound(round: number): WeatherType {
-  const pool: WeatherType[] = [
-    "sunny",
-    "cloudy",
-    "cold",
-    "light-rain",
-    "heavy-rain",
-    "mixed",
-  ];
-
-  return pool[(round - 1) % pool.length];
+export interface AdvanceToNextWeekendResult {
+  nextWeekend: WeekendState | null;
+  nextRound: number | null;
+  reason: string | null;
+  seasonCompleted: boolean;
 }
 
-function buildNextWeekendSchedule(baseDate: Date) {
-  const fridayPractice = new Date(baseDate);
-  fridayPractice.setHours(12, 0, 0, 0);
+export function canAdvanceWeekend(weekend: WeekendState): boolean {
+  return (
+    weekend.race.isCompleted &&
+    weekend.postRace.isCompleted &&
+    weekend.postRace.rewardsApplied
+  );
+}
 
-  const preQualifyingManagement = new Date(baseDate);
-  preQualifyingManagement.setHours(15, 0, 0, 0);
+export function buildWeekendScheduleForRound(round: number): WeekendSchedule | null {
+  const entry = getWeekendCalendarEntry(round);
 
-  const saturdayQualifying = new Date(baseDate);
-  saturdayQualifying.setDate(saturdayQualifying.getDate() + 1);
-  saturdayQualifying.setHours(14, 0, 0, 0);
-
-  const saturdayParcFerme = new Date(baseDate);
-  saturdayParcFerme.setDate(saturdayParcFerme.getDate() + 1);
-  saturdayParcFerme.setHours(15, 0, 0, 0);
-
-  const sundayRace = new Date(baseDate);
-  sundayRace.setDate(sundayRace.getDate() + 2);
-  sundayRace.setHours(15, 0, 0, 0);
-
-  const sundayPostRace = new Date(baseDate);
-  sundayPostRace.setDate(sundayPostRace.getDate() + 2);
-  sundayPostRace.setHours(17, 0, 0, 0);
+  if (!entry) {
+    return null;
+  }
 
   return {
-    practiceStartAt: fridayPractice.toISOString(),
-    preQualifyingManagementStartAt: preQualifyingManagement.toISOString(),
-    qualifyingStartAt: saturdayQualifying.toISOString(),
-    parcFermeStartAt: saturdayParcFerme.toISOString(),
-    raceStartAt: sundayRace.toISOString(),
-    postRaceStartAt: sundayPostRace.toISOString(),
+    practiceAt: entry.practiceAt,
+    qualifyingAt: entry.qualifyingAt,
+    raceAt: entry.raceAt,
   };
 }
 
-function getNextWeekendBaseDate(currentWeekend: WeekendState): Date {
-  const currentRaceDate = new Date(currentWeekend.schedule.raceStartAt);
-  const nextBaseDate = new Date(currentRaceDate);
+export function createWeekendFromCalendarRound(params: {
+  season: number;
+  round: number;
+  teamId: string;
+  activeDriverId?: string | null;
+}): WeekendState | null {
+  const entry = getWeekendCalendarEntry(params.round);
 
-  nextBaseDate.setDate(nextBaseDate.getDate() + 5);
-  nextBaseDate.setHours(9, 0, 0, 0);
-
-  return nextBaseDate;
-}
-
-export function canAdvanceWeekend(
-  weekend: WeekendState,
-  season: SeasonState
-): boolean {
-  if (!weekend.race.completed) {
-    return false;
+  if (!entry) {
+    return null;
   }
-
-  if (!weekend.postRace.completed) {
-    return false;
-  }
-
-  if (!weekend.rewardsApplied) {
-    return false;
-  }
-
-  return season.processedWeekendIds.includes(weekend.id);
-}
-
-export function generateNextWeekend({
-  currentWeekend,
-  season,
-  team,
-}: GenerateNextWeekendInput): WeekendState {
-  const nextRound = getNextRound(season.currentRound);
-  const calendarEntry = getCalendarEntryForRound(nextRound);
-
-  const circuit =
-    circuits.find((entry) => entry.id === calendarEntry.circuitId) ?? circuits[0];
-
-  const weather = pickWeatherForRound(nextRound);
-  const nextBaseDate = getNextWeekendBaseDate(currentWeekend);
-  const schedule = buildNextWeekendSchedule(nextBaseDate);
 
   return createWeekend({
-    id: `season-${season.id}-round-${nextRound}`,
-    seasonId: season.id,
-    teamId: team.id,
-    round: nextRound,
-    teamName: team.name,
-    circuit,
-    weather,
-    activeDriverId: team.activeDriverId,
-    strategyPresetId: currentWeekend.strategyPresetId,
-    trainingSelection: currentWeekend.trainingSelection,
-    schedule,
+    id: `weekend-${params.season}-${params.round}`,
+    season: params.season,
+    round: params.round,
+    teamId: params.teamId,
+    circuitId: entry.circuitId,
+    weatherId: entry.weatherId,
+    schedule: {
+      practiceAt: entry.practiceAt,
+      qualifyingAt: entry.qualifyingAt,
+      raceAt: entry.raceAt,
+    },
+    activeDriverId: params.activeDriverId ?? null,
   });
 }
 
 export function advanceToNextWeekend({
   currentWeekend,
-  season,
-  team,
-}: GenerateNextWeekendInput): AdvanceWeekendResult {
-  if (!canAdvanceWeekend(currentWeekend, season)) {
-    throw new Error(
-      "Weekend cannot be advanced yet. Race, post-race, rewards, and season processing must be complete."
-    );
+  seasonState,
+}: AdvanceToNextWeekendInput): AdvanceToNextWeekendResult {
+  if (!canAdvanceWeekend(currentWeekend)) {
+    return {
+      nextWeekend: null,
+      nextRound: null,
+      reason: "Current weekend is not fully completed yet.",
+      seasonCompleted: false,
+    };
   }
 
-  const weekend = generateNextWeekend({
-    currentWeekend,
-    season,
-    team,
+  const nextRound = seasonState.currentRound;
+  const lastRound = getLastCalendarRound();
+
+  if (nextRound > lastRound) {
+    return {
+      nextWeekend: null,
+      nextRound: null,
+      reason: "No more calendar entries available.",
+      seasonCompleted: true,
+    };
+  }
+
+  const nextWeekend = createWeekendFromCalendarRound({
+    season: seasonState.season,
+    round: nextRound,
+    teamId: currentWeekend.teamId,
+    activeDriverId: currentWeekend.activeDriverId,
   });
 
+  if (!nextWeekend) {
+    return {
+      nextWeekend: null,
+      nextRound: null,
+      reason: "Could not create the next weekend from calendar data.",
+      seasonCompleted: false,
+    };
+  }
+
   return {
-    season: {
-      ...season,
-      currentRound: season.currentRound + 1,
-    },
-    weekend,
+    nextWeekend,
+    nextRound,
+    reason: null,
+    seasonCompleted: false,
   };
 }

@@ -1,71 +1,64 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import WeekendFlowPanel from "@/components/race/WeekendFlowPanel";
+import { createDefaultRaceStrategy } from "@/lib/raceStrategy";
+import { applyWeekendToSeason, createInitialSeasonState } from "@/lib/season";
 import {
-  applyWeekendToSeason,
-  createInitialSeasonState,
-} from "@/lib/season";
+  advanceToNextWeekend,
+  canAdvanceWeekend,
+  createWeekendFromCalendarRound,
+} from "@/lib/weekendAdvance";
 import {
   completeWeekendPractice,
+  completeWeekendPostRace,
   completeWeekendQualifying,
   completeWeekendRace,
-  completeWeekendPostRace,
-  createWeekend,
   markWeekendRewardsApplied,
-  setWeekendActiveDriver,
-  setWeekendStrategy,
-  setWeekendTraining,
+  setWeekendDriverStrategy,
+  setWeekendDriverTraining,
 } from "@/lib/weekend";
 import { buildWeekendPostRaceResult } from "@/lib/weekendPostRace";
 import { simulateWeekendPractice } from "@/lib/weekendPractice";
+import { simulateWeekendQualifying } from "@/lib/weekendQualifying";
+import { simulateWeekendRace } from "@/lib/weekendRace";
 import {
+  DEV_WEEKEND_MODE,
   formatSessionLabel,
   getWeekendSessionInfo,
 } from "@/lib/weekendSession";
-import { simulateWeekendQualifying } from "@/lib/weekendQualifying";
-import { simulateWeekendRace } from "@/lib/weekendRace";
+import type { DriverRaceStrategy } from "@/types/raceStrategy";
 import type { SeasonState } from "@/types/season";
-import type { WeekendState } from "@/types/weekend";
+import type { WeekendPostRaceResult } from "@/types/weekendPostRace";
 import type { WeekendPracticeResult } from "@/types/weekendPractice";
 import type {
   WeekendQualifyingResult,
   WeekendTrainingSelection,
 } from "@/types/weekendQualifying";
 import type { WeekendRaceResult } from "@/types/weekendRace";
-import type { WeekendPostRaceResult } from "@/types/weekendPostRace";
+import type { WeekendState } from "@/types/weekend";
+import { useEffect, useMemo, useState } from "react";
+import WeekendFlowPanel from "@/components/race/WeekendFlowPanel";
 
-function createStableDemoSchedule() {
-  return {
-    practiceAt: "2026-04-10T18:00:00.000Z",
-    qualifyingAt: "2026-04-11T15:00:00.000Z",
-    raceAt: "2026-04-12T16:00:00.000Z",
-  };
-}
-
-function createInitialWeekend(): WeekendState<
+type AppWeekendState = WeekendState<
   WeekendTrainingSelection,
   WeekendPracticeResult,
   WeekendQualifyingResult,
   WeekendRaceResult,
   WeekendPostRaceResult
-> {
-  return createWeekend<
-    WeekendTrainingSelection,
-    WeekendPracticeResult,
-    WeekendQualifyingResult,
-    WeekendRaceResult,
-    WeekendPostRaceResult
-  >({
-    id: "weekend-1",
+>;
+
+function createInitialWeekend(): AppWeekendState {
+  const weekend = createWeekendFromCalendarRound({
     season: 1,
     round: 1,
     teamId: "starter-team",
-    circuitId: "melbourne",
-    weatherId: "sunny",
-    schedule: createStableDemoSchedule(),
     activeDriverId: "driver-1",
   });
+
+  if (!weekend) {
+    throw new Error("Could not create initial weekend from calendar round 1.");
+  }
+
+  return weekend as AppWeekendState;
 }
 
 function formatIsoForDisplay(iso: string): string {
@@ -73,20 +66,10 @@ function formatIsoForDisplay(iso: string): string {
 }
 
 export default function HomePage() {
-  const [weekend, setWeekend] = useState<
-    WeekendState<
-      WeekendTrainingSelection,
-      WeekendPracticeResult,
-      WeekendQualifyingResult,
-      WeekendRaceResult,
-      WeekendPostRaceResult
-    >
-  >(() => createInitialWeekend());
-
+  const [weekend, setWeekend] = useState<AppWeekendState>(() => createInitialWeekend());
   const [seasonState, setSeasonState] = useState<SeasonState>(() =>
     createInitialSeasonState(1)
   );
-
   const [isMounted, setIsMounted] = useState(false);
   const [nowMs, setNowMs] = useState(0);
 
@@ -111,189 +94,197 @@ export default function HomePage() {
     return getWeekendSessionInfo(weekend, nowMs);
   }, [weekend, nowMs, isMounted]);
 
+  const canAdvanceToNextWeekend = useMemo(() => {
+    return canAdvanceWeekend(weekend);
+  }, [weekend]);
+
   const summary = useMemo(() => {
     return {
+      devMode: DEV_WEEKEND_MODE,
       currentSession: sessionInfo.currentSession,
       nextSession: sessionInfo.nextSession,
       countdownMs: sessionInfo.countdownMs,
       permissions: sessionInfo.permissions,
-      activeDriverId: weekend.activeDriverId,
-      strategyPresetId: weekend.strategyPresetId,
-      trainingPlan: weekend.trainingPlan,
+      driverSetups: weekend.driverSetups,
       practiceCompleted: weekend.practice.isCompleted,
       qualifyingCompleted: weekend.qualifying.isCompleted,
       raceCompleted: weekend.race.isCompleted,
       postRaceCompleted: weekend.postRace.isCompleted,
       rewardsApplied: weekend.postRace.rewardsApplied,
-      raceFinishPosition: weekend.race.result?.finishPosition ?? null,
-      creditsEarned: weekend.postRace.result?.rewards.creditsEarned ?? null,
       seasonCurrentRound: seasonState.currentRound,
       driverStandings: seasonState.driverStandings,
       teamStandings: seasonState.teamStandings,
       schedule: weekend.schedule,
+      canAdvanceToNextWeekend,
     };
-  }, [sessionInfo, weekend, seasonState]);
+  }, [sessionInfo, weekend, seasonState, canAdvanceToNextWeekend]);
 
-  function handleSelectDriver(driverId: string) {
-    if (!sessionInfo.permissions.canChangeDriver) {
-      return;
-    }
-
-    setWeekend((current) => setWeekendActiveDriver(current, driverId));
+  function handleSetTraining(driverId: string, training: WeekendTrainingSelection) {
+    setWeekend((current: AppWeekendState) =>
+      setWeekendDriverTraining(current, driverId, training) as AppWeekendState
+    );
   }
 
-  function handleSetTraining(training: WeekendTrainingSelection) {
-    if (!sessionInfo.permissions.canEditTraining) {
-      return;
-    }
-
-    setWeekend((current) => setWeekendTraining(current, training));
-  }
-
-  function handleSetStrategy(strategyPresetId: string) {
-    if (!sessionInfo.permissions.canEditStrategy) {
-      return;
-    }
-
-    setWeekend((current) => setWeekendStrategy(current, strategyPresetId));
+  function handleSetStrategy(driverId: string, raceStrategy: DriverRaceStrategy) {
+    setWeekend((current: AppWeekendState) =>
+      setWeekendDriverStrategy(current, driverId, raceStrategy) as AppWeekendState
+    );
   }
 
   function handleRunPractice() {
-    setWeekend((current) => {
-      const currentInfo = getWeekendSessionInfo(current, Date.now());
-
-      if (currentInfo.currentSession !== "practice") {
-        return current;
-      }
-
+    setWeekend((current: AppWeekendState) => {
       if (current.practice.isCompleted) {
         return current;
       }
 
-      if (!current.activeDriverId) {
-        return current;
-      }
+      const resultsByDriver: Record<string, WeekendPracticeResult | null> = {};
 
-      const result = simulateWeekendPractice({
-        teamId: current.teamId,
-        circuitId: current.circuitId,
-        weatherId: current.weatherId,
-        activeDriverId: current.activeDriverId,
-        trainingPlan: current.trainingPlan,
+      current.driverIds.forEach((driverId) => {
+        const setup = current.driverSetups[driverId];
+        const trainingPlan =
+          setup?.trainingPlan ?? {
+            slots: 1,
+            trim: "balanced",
+            skill: "consistency",
+            compound: "medium",
+          };
+
+        resultsByDriver[driverId] = simulateWeekendPractice({
+          teamId: current.teamId,
+          circuitId: current.circuitId,
+          weatherId: current.weatherId,
+          activeDriverId: driverId,
+          trainingPlan,
+        });
       });
 
-      return completeWeekendPractice(current, result);
+      return completeWeekendPractice(current, resultsByDriver) as AppWeekendState;
     });
   }
 
   function handleRunQualifying() {
-    setWeekend((current) => {
-      const currentInfo = getWeekendSessionInfo(current, Date.now());
-
-      if (currentInfo.currentSession !== "qualifying") {
-        return current;
-      }
-
+    setWeekend((current: AppWeekendState) => {
       if (current.qualifying.isCompleted) {
         return current;
       }
 
-      if (!current.activeDriverId) {
-        return current;
-      }
+      const resultsByDriver: Record<string, WeekendQualifyingResult | null> = {};
 
-      const result = simulateWeekendQualifying({
-        teamId: current.teamId,
-        circuitId: current.circuitId,
-        weatherId: current.weatherId,
-        activeDriverId: current.activeDriverId,
-        trainingPlan: current.trainingPlan,
+      current.driverIds.forEach((driverId) => {
+        const setup = current.driverSetups[driverId];
+        const trainingPlan =
+          setup?.trainingPlan ?? {
+            slots: 1,
+            trim: "balanced",
+            skill: "consistency",
+            compound: "medium",
+          };
+
+        resultsByDriver[driverId] = simulateWeekendQualifying({
+          teamId: current.teamId,
+          circuitId: current.circuitId,
+          weatherId: current.weatherId,
+          activeDriverId: driverId,
+          trainingPlan,
+        });
       });
 
-      return completeWeekendQualifying(current, result);
+      return completeWeekendQualifying(current, resultsByDriver) as AppWeekendState;
     });
   }
 
   function handleRunRace() {
-    setWeekend((current) => {
-      const currentInfo = getWeekendSessionInfo(current, Date.now());
-
-      if (currentInfo.currentSession !== "race") {
-        return current;
-      }
-
+    setWeekend((current: AppWeekendState) => {
       if (current.race.isCompleted) {
         return current;
       }
 
-      if (!current.activeDriverId) {
-        return current;
-      }
+      const resultsByDriver: Record<string, WeekendRaceResult | null> = {};
 
-      const result = simulateWeekendRace({
-        teamId: current.teamId,
-        circuitId: current.circuitId,
-        weatherId: current.weatherId,
-        activeDriverId: current.activeDriverId,
-        strategyPresetId: current.strategyPresetId,
-        qualifyingPosition: current.qualifying.result?.playerPosition ?? null,
-        practiceBoosts: current.practice.result?.boosts ?? null,
+      current.driverIds.forEach((driverId) => {
+        const setup = current.driverSetups[driverId];
+        const practiceResult = current.practice.resultsByDriver[driverId];
+        const qualifyingResult = current.qualifying.resultsByDriver[driverId];
+
+        resultsByDriver[driverId] = simulateWeekendRace({
+          teamId: current.teamId,
+          circuitId: current.circuitId,
+          weatherId: current.weatherId,
+          activeDriverId: driverId,
+          raceStrategy: setup?.raceStrategy ?? createDefaultRaceStrategy(2),
+          qualifyingPosition: qualifyingResult?.playerPosition ?? null,
+          practiceBoosts: practiceResult?.boosts ?? null,
+        });
       });
 
-      return completeWeekendRace(current, result);
+      return completeWeekendRace(current, resultsByDriver) as AppWeekendState;
     });
   }
 
   function handleApplyPostRace() {
-    setWeekend((current) => {
-      if (!current.race.isCompleted) {
-        return current;
-      }
+    if (weekend.postRace.rewardsApplied) {
+      return;
+    }
 
-      if (!current.race.result) {
-        return current;
-      }
+    const raceResults = Object.values(weekend.race.resultsByDriver).filter(
+      (value): value is WeekendRaceResult => value !== null
+    );
 
-      if (current.postRace.rewardsApplied) {
-        return current;
-      }
+    if (raceResults.length === 0) {
+      return;
+    }
 
-      const postRaceResult = buildWeekendPostRaceResult(current.race.result);
-      const withPostRace = completeWeekendPostRace(current, postRaceResult);
-      return markWeekendRewardsApplied(withPostRace);
+    const postRaceResultsByDriver: Record<string, WeekendPostRaceResult | null> = {};
+
+    weekend.driverIds.forEach((driverId) => {
+      const raceResult = weekend.race.resultsByDriver[driverId];
+      postRaceResultsByDriver[driverId] = raceResult
+        ? buildWeekendPostRaceResult(raceResult)
+        : null;
     });
 
-    setSeasonState((currentSeason) => {
-      if (!weekend.race.result || !weekend.postRace.result && !weekend.race.isCompleted) {
-        return currentSeason;
+    setWeekend((current: AppWeekendState) => {
+      if (!current.race.isCompleted || current.postRace.rewardsApplied) {
+        return current;
       }
 
-      const raceResult = weekend.race.result;
-      const derivedPostRace =
-        weekend.postRace.result ?? (raceResult ? buildWeekendPostRaceResult(raceResult) : null);
+      const withPostRace = completeWeekendPostRace(
+        current,
+        postRaceResultsByDriver
+      ) as AppWeekendState;
 
-      if (!raceResult || !derivedPostRace) {
-        return currentSeason;
-      }
+      return markWeekendRewardsApplied(withPostRace) as AppWeekendState;
+    });
 
-      return applyWeekendToSeason({
+    setSeasonState((currentSeason: SeasonState) =>
+      applyWeekendToSeason({
         seasonState: currentSeason,
         weekendId: weekend.id,
         round: weekend.round,
         circuitId: weekend.circuitId,
-        raceResult,
-        postRaceResult: derivedPostRace,
-      });
+        raceResults,
+      })
+    );
+  }
+
+  function handleAdvanceToNextWeekend() {
+    const result = advanceToNextWeekend({
+      currentWeekend: weekend,
+      seasonState,
     });
+
+    if (!result.nextWeekend) {
+      return;
+    }
+
+    setWeekend(result.nextWeekend as AppWeekendState);
+    setNowMs(Date.now());
   }
 
   function handleResetWeekend() {
     setWeekend(createInitialWeekend());
     setSeasonState(createInitialSeasonState(1));
-
-    if (isMounted) {
-      setNowMs(Date.now());
-    }
+    setNowMs(Date.now());
   }
 
   return (
@@ -307,10 +298,7 @@ export default function HomePage() {
             Timed Weekend Session Flow
           </h1>
           <p className="mt-3 max-w-4xl text-sm text-neutral-400">
-            De weekend flow is nu tijdgestuurd. Friday practice, Saturday qualifying
-            en Sunday race zijn vaste sessies. Tussen de sessies zijn management
-            windows open. Na qualifying geldt parc fermé: alleen race strategy mag
-            dan nog aangepast worden.
+            Weekend flow now supports both drivers with custom stint-based strategy.
           </p>
 
           <div className="mt-4 flex flex-wrap gap-3">
@@ -362,13 +350,14 @@ export default function HomePage() {
             sessionInfo.nextSession ? formatSessionLabel(sessionInfo.nextSession) : null
           }
           permissions={sessionInfo.permissions}
-          onSelectDriver={handleSelectDriver}
+          canAdvanceToNextWeekend={canAdvanceToNextWeekend}
           onSetTraining={handleSetTraining}
           onSetStrategy={handleSetStrategy}
           onRunPractice={handleRunPractice}
           onRunQualifying={handleRunQualifying}
           onRunRace={handleRunRace}
           onApplyPostRace={handleApplyPostRace}
+          onAdvanceToNextWeekend={handleAdvanceToNextWeekend}
         />
 
         <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">

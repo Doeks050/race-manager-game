@@ -1,3 +1,4 @@
+import type { DriverRaceStrategy } from "@/types/raceStrategy";
 import type { WeekendPracticeBoosts } from "@/types/weekendPractice";
 
 export interface WeekendRaceEvent {
@@ -33,7 +34,7 @@ export interface WeekendRaceResult {
   totalRaceTimeMs: number;
   averageLapTimeMs: number;
 
-  strategyPresetId: string;
+  raceStrategy: DriverRaceStrategy;
   practiceBoosts: WeekendPracticeBoosts | null;
 
   stints: WeekendRaceStint[];

@@ -5,6 +5,8 @@ import type {
   WeekendSessionName,
 } from "@/types/weekendSession";
 
+export const DEV_WEEKEND_MODE = true;
+
 function toMs(value: string): number {
   return new Date(value).getTime();
 }
@@ -21,6 +23,16 @@ function getNextCountdown(nowMs: number, targetIso: string | null): number | nul
 export function getWeekendPermissions(
   session: WeekendSessionName
 ): WeekendPermissions {
+  if (DEV_WEEKEND_MODE) {
+    return {
+      canUpgrade: true,
+      canChangeDriver: true,
+      canRecoverDriver: true,
+      canEditTraining: true,
+      canEditStrategy: true,
+    };
+  }
+
   switch (session) {
     case "pre_practice_management":
       return {
@@ -112,6 +124,10 @@ export function getCurrentWeekendSession<
   >,
   nowMs: number = Date.now()
 ): WeekendSessionName {
+  if (DEV_WEEKEND_MODE) {
+    return "pre_practice_management";
+  }
+
   const practiceAtMs = toMs(weekend.schedule.practiceAt);
   const qualifyingAtMs = toMs(weekend.schedule.qualifyingAt);
   const raceAtMs = toMs(weekend.schedule.raceAt);
@@ -158,6 +174,16 @@ export function getWeekendSessionInfo<
   nowMs: number = Date.now()
 ): WeekendSessionInfo {
   const currentSession = getCurrentWeekendSession(weekend, nowMs);
+
+  if (DEV_WEEKEND_MODE) {
+    return {
+      currentSession,
+      nextSession: null,
+      nextSessionStartsAt: null,
+      countdownMs: null,
+      permissions: getWeekendPermissions(currentSession),
+    };
+  }
 
   switch (currentSession) {
     case "pre_practice_management":
@@ -235,6 +261,10 @@ export function getWeekendSessionInfo<
 }
 
 export function formatCountdown(ms: number | null): string {
+  if (DEV_WEEKEND_MODE) {
+    return "DEV MODE";
+  }
+
   if (ms === null) {
     return "—";
   }
