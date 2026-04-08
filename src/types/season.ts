@@ -1,12 +1,8 @@
-export interface ChampionshipPointsResult {
-  position: number;
-  points: number;
-}
-
 export interface DriverStandingEntry {
   driverId: string;
   driverName: string;
   teamId: string;
+  teamName: string;
   points: number;
   wins: number;
   podiums: number;
@@ -26,7 +22,9 @@ export interface SeasonRoundResult {
   round: number;
   circuitId: string;
   driverId: string;
+  driverName: string;
   teamId: string;
+  teamName: string;
   finishPosition: number;
   pointsEarned: number;
 }

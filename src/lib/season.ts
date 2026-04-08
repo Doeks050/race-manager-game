@@ -1,10 +1,10 @@
+import { getAllFieldDrivers, getAllFieldTeams } from "@/data/fullField";
 import type {
   DriverStandingEntry,
   SeasonRoundResult,
   SeasonState,
   TeamStandingEntry,
 } from "@/types/season";
-import type { WeekendRaceResult } from "@/types/weekendRace";
 
 const CHAMPIONSHIP_POINTS_TABLE: Record<number, number> = {
   1: 25,
@@ -19,36 +19,8 @@ const CHAMPIONSHIP_POINTS_TABLE: Record<number, number> = {
   10: 1,
 };
 
-const PLAYER_DRIVER_NAMES: Record<string, string> = {
-  "driver-1": "Driver 1",
-  "driver-2": "Driver 2",
-};
-
-const TEAM_NAMES: Record<string, string> = {
-  "starter-team": "Starter Team",
-};
-
-function getDriverName(driverId: string): string {
-  return PLAYER_DRIVER_NAMES[driverId] ?? driverId;
-}
-
-function getTeamName(teamId: string): string {
-  return TEAM_NAMES[teamId] ?? teamId;
-}
-
 export function getChampionshipPoints(position: number): number {
   return CHAMPIONSHIP_POINTS_TABLE[position] ?? 0;
-}
-
-export function createInitialSeasonState(season: number): SeasonState {
-  return {
-    season,
-    currentRound: 1,
-    processedWeekendIds: [],
-    driverStandings: [],
-    teamStandings: [],
-    roundResults: [],
-  };
 }
 
 function sortDriverStandings(standings: DriverStandingEntry[]): DriverStandingEntry[] {
@@ -69,79 +41,35 @@ function sortTeamStandings(standings: TeamStandingEntry[]): TeamStandingEntry[] 
   });
 }
 
-function upsertDriverStanding(
-  standings: DriverStandingEntry[],
-  result: SeasonRoundResult
-): DriverStandingEntry[] {
-  const existing = standings.find((entry) => entry.driverId === result.driverId);
+export function createInitialSeasonState(season: number): SeasonState {
+  const driverStandings: DriverStandingEntry[] = getAllFieldDrivers().map((driver) => ({
+    driverId: driver.id,
+    driverName: driver.name,
+    teamId: driver.teamId,
+    teamName: driver.teamName,
+    points: 0,
+    wins: 0,
+    podiums: 0,
+    races: 0,
+  }));
 
-  if (!existing) {
-    return sortDriverStandings([
-      ...standings,
-      {
-        driverId: result.driverId,
-        driverName: getDriverName(result.driverId),
-        teamId: result.teamId,
-        points: result.pointsEarned,
-        wins: result.finishPosition === 1 ? 1 : 0,
-        podiums: result.finishPosition <= 3 ? 1 : 0,
-        races: 1,
-      },
-    ]);
-  }
+  const teamStandings: TeamStandingEntry[] = getAllFieldTeams().map((team) => ({
+    teamId: team.teamId,
+    teamName: team.teamName,
+    points: 0,
+    wins: 0,
+    podiums: 0,
+    races: 0,
+  }));
 
-  return sortDriverStandings(
-    standings.map((entry) => {
-      if (entry.driverId !== result.driverId) {
-        return entry;
-      }
-
-      return {
-        ...entry,
-        points: entry.points + result.pointsEarned,
-        wins: entry.wins + (result.finishPosition === 1 ? 1 : 0),
-        podiums: entry.podiums + (result.finishPosition <= 3 ? 1 : 0),
-        races: entry.races + 1,
-      };
-    })
-  );
-}
-
-function upsertTeamStanding(
-  standings: TeamStandingEntry[],
-  result: SeasonRoundResult
-): TeamStandingEntry[] {
-  const existing = standings.find((entry) => entry.teamId === result.teamId);
-
-  if (!existing) {
-    return sortTeamStandings([
-      ...standings,
-      {
-        teamId: result.teamId,
-        teamName: getTeamName(result.teamId),
-        points: result.pointsEarned,
-        wins: result.finishPosition === 1 ? 1 : 0,
-        podiums: result.finishPosition <= 3 ? 1 : 0,
-        races: 1,
-      },
-    ]);
-  }
-
-  return sortTeamStandings(
-    standings.map((entry) => {
-      if (entry.teamId !== result.teamId) {
-        return entry;
-      }
-
-      return {
-        ...entry,
-        points: entry.points + result.pointsEarned,
-        wins: entry.wins + (result.finishPosition === 1 ? 1 : 0),
-        podiums: entry.podiums + (result.finishPosition <= 3 ? 1 : 0),
-        races: entry.races + 1,
-      };
-    })
-  );
+  return {
+    season,
+    currentRound: 1,
+    processedWeekendIds: [],
+    driverStandings: sortDriverStandings(driverStandings),
+    teamStandings: sortTeamStandings(teamStandings),
+    roundResults: [],
+  };
 }
 
 export interface ApplyWeekendToSeasonInput {
@@ -149,47 +77,61 @@ export interface ApplyWeekendToSeasonInput {
   weekendId: string;
   round: number;
   circuitId: string;
-  raceResults: WeekendRaceResult[];
+  roundResults: SeasonRoundResult[];
 }
 
 export function applyWeekendToSeason({
   seasonState,
   weekendId,
   round,
-  circuitId,
-  raceResults,
+  roundResults,
 }: ApplyWeekendToSeasonInput): SeasonState {
   if (seasonState.processedWeekendIds.includes(weekendId)) {
     return seasonState;
   }
 
-  let nextDriverStandings = seasonState.driverStandings;
-  let nextTeamStandings = seasonState.teamStandings;
+  const nextDriverStandings = seasonState.driverStandings.map((entry) => {
+    const roundResult = roundResults.find((result) => result.driverId === entry.driverId);
 
-  const roundResults: SeasonRoundResult[] = raceResults.map((raceResult) => {
-    const pointsEarned = getChampionshipPoints(raceResult.finishPosition);
+    if (!roundResult) {
+      return entry;
+    }
 
-    const roundResult: SeasonRoundResult = {
-      round,
-      circuitId,
-      driverId: raceResult.playerDriverId,
-      teamId: raceResult.playerTeamId,
-      finishPosition: raceResult.finishPosition,
-      pointsEarned,
+    return {
+      ...entry,
+      points: entry.points + roundResult.pointsEarned,
+      wins: entry.wins + (roundResult.finishPosition === 1 ? 1 : 0),
+      podiums: entry.podiums + (roundResult.finishPosition <= 3 ? 1 : 0),
+      races: entry.races + 1,
     };
+  });
 
-    nextDriverStandings = upsertDriverStanding(nextDriverStandings, roundResult);
-    nextTeamStandings = upsertTeamStanding(nextTeamStandings, roundResult);
+  const nextTeamStandings = seasonState.teamStandings.map((entry) => {
+    const teamResults = roundResults.filter((result) => result.teamId === entry.teamId);
 
-    return roundResult;
+    if (teamResults.length === 0) {
+      return entry;
+    }
+
+    const pointsEarned = teamResults.reduce((sum, result) => sum + result.pointsEarned, 0);
+    const wins = teamResults.filter((result) => result.finishPosition === 1).length;
+    const podiums = teamResults.filter((result) => result.finishPosition <= 3).length;
+
+    return {
+      ...entry,
+      points: entry.points + pointsEarned,
+      wins: entry.wins + wins,
+      podiums: entry.podiums + podiums,
+      races: entry.races + 1,
+    };
   });
 
   return {
     ...seasonState,
     currentRound: Math.max(seasonState.currentRound, round + 1),
     processedWeekendIds: [...seasonState.processedWeekendIds, weekendId],
+    driverStandings: sortDriverStandings(nextDriverStandings),
+    teamStandings: sortTeamStandings(nextTeamStandings),
     roundResults: [...seasonState.roundResults, ...roundResults],
-    driverStandings: nextDriverStandings,
-    teamStandings: nextTeamStandings,
   };
 }

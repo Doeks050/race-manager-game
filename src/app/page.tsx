@@ -1,12 +1,14 @@
 "use client";
 
+import WeekendFlowPanel from "@/components/race/WeekendFlowPanel";
 import { createDefaultRaceStrategy } from "@/lib/raceStrategy";
-import { applyWeekendToSeason, createInitialSeasonState } from "@/lib/season";
 import {
-  advanceToNextWeekend,
-  canAdvanceWeekend,
-  createWeekendFromCalendarRound,
-} from "@/lib/weekendAdvance";
+  buildFullFieldRoundResults,
+  classifyPracticeResultsAgainstField,
+  classifyQualifyingResultsAgainstField,
+  classifyRaceResultsAgainstField,
+} from "@/lib/fullField";
+import { applyWeekendToSeason, createInitialSeasonState } from "@/lib/season";
 import {
   completeWeekendPractice,
   completeWeekendPostRace,
@@ -16,6 +18,11 @@ import {
   setWeekendDriverStrategy,
   setWeekendDriverTraining,
 } from "@/lib/weekend";
+import {
+  advanceToNextWeekend,
+  canAdvanceWeekend,
+  createWeekendFromCalendarRound,
+} from "@/lib/weekendAdvance";
 import { buildWeekendPostRaceResult } from "@/lib/weekendPostRace";
 import { simulateWeekendPractice } from "@/lib/weekendPractice";
 import { simulateWeekendQualifying } from "@/lib/weekendQualifying";
@@ -36,7 +43,6 @@ import type {
 import type { WeekendRaceResult } from "@/types/weekendRace";
 import type { WeekendState } from "@/types/weekend";
 import { useEffect, useMemo, useState } from "react";
-import WeekendFlowPanel from "@/components/race/WeekendFlowPanel";
 
 type AppWeekendState = WeekendState<
   WeekendTrainingSelection,
@@ -112,10 +118,13 @@ export default function HomePage() {
       postRaceCompleted: weekend.postRace.isCompleted,
       rewardsApplied: weekend.postRace.rewardsApplied,
       seasonCurrentRound: seasonState.currentRound,
-      driverStandings: seasonState.driverStandings,
+      driverStandingsTop10: seasonState.driverStandings.slice(0, 10),
       teamStandings: seasonState.teamStandings,
       schedule: weekend.schedule,
       canAdvanceToNextWeekend,
+      practiceResults: weekend.practice.resultsByDriver,
+      qualifyingResults: weekend.qualifying.resultsByDriver,
+      raceResults: weekend.race.resultsByDriver,
     };
   }, [sessionInfo, weekend, seasonState, canAdvanceToNextWeekend]);
 
@@ -137,7 +146,7 @@ export default function HomePage() {
         return current;
       }
 
-      const resultsByDriver: Record<string, WeekendPracticeResult | null> = {};
+      const rawResultsByDriver: Record<string, WeekendPracticeResult | null> = {};
 
       current.driverIds.forEach((driverId) => {
         const setup = current.driverSetups[driverId];
@@ -149,7 +158,7 @@ export default function HomePage() {
             compound: "medium",
           };
 
-        resultsByDriver[driverId] = simulateWeekendPractice({
+        rawResultsByDriver[driverId] = simulateWeekendPractice({
           teamId: current.teamId,
           circuitId: current.circuitId,
           weatherId: current.weatherId,
@@ -158,7 +167,14 @@ export default function HomePage() {
         });
       });
 
-      return completeWeekendPractice(current, resultsByDriver) as AppWeekendState;
+      const classifiedResults = classifyPracticeResultsAgainstField({
+        round: current.round,
+        circuitId: current.circuitId,
+        weatherId: current.weatherId,
+        playerResultsByDriver: rawResultsByDriver,
+      });
+
+      return completeWeekendPractice(current, classifiedResults) as AppWeekendState;
     });
   }
 
@@ -168,7 +184,7 @@ export default function HomePage() {
         return current;
       }
 
-      const resultsByDriver: Record<string, WeekendQualifyingResult | null> = {};
+      const rawResultsByDriver: Record<string, WeekendQualifyingResult | null> = {};
 
       current.driverIds.forEach((driverId) => {
         const setup = current.driverSetups[driverId];
@@ -180,7 +196,7 @@ export default function HomePage() {
             compound: "medium",
           };
 
-        resultsByDriver[driverId] = simulateWeekendQualifying({
+        rawResultsByDriver[driverId] = simulateWeekendQualifying({
           teamId: current.teamId,
           circuitId: current.circuitId,
           weatherId: current.weatherId,
@@ -189,7 +205,14 @@ export default function HomePage() {
         });
       });
 
-      return completeWeekendQualifying(current, resultsByDriver) as AppWeekendState;
+      const classifiedResults = classifyQualifyingResultsAgainstField({
+        round: current.round,
+        circuitId: current.circuitId,
+        weatherId: current.weatherId,
+        playerResultsByDriver: rawResultsByDriver,
+      });
+
+      return completeWeekendQualifying(current, classifiedResults) as AppWeekendState;
     });
   }
 
@@ -199,14 +222,14 @@ export default function HomePage() {
         return current;
       }
 
-      const resultsByDriver: Record<string, WeekendRaceResult | null> = {};
+      const rawResultsByDriver: Record<string, WeekendRaceResult | null> = {};
 
       current.driverIds.forEach((driverId) => {
         const setup = current.driverSetups[driverId];
         const practiceResult = current.practice.resultsByDriver[driverId];
         const qualifyingResult = current.qualifying.resultsByDriver[driverId];
 
-        resultsByDriver[driverId] = simulateWeekendRace({
+        rawResultsByDriver[driverId] = simulateWeekendRace({
           teamId: current.teamId,
           circuitId: current.circuitId,
           weatherId: current.weatherId,
@@ -217,7 +240,14 @@ export default function HomePage() {
         });
       });
 
-      return completeWeekendRace(current, resultsByDriver) as AppWeekendState;
+      const classifiedResults = classifyRaceResultsAgainstField({
+        round: current.round,
+        circuitId: current.circuitId,
+        weatherId: current.weatherId,
+        playerResultsByDriver: rawResultsByDriver,
+      });
+
+      return completeWeekendRace(current, classifiedResults) as AppWeekendState;
     });
   }
 
@@ -226,11 +256,11 @@ export default function HomePage() {
       return;
     }
 
-    const raceResults = Object.values(weekend.race.resultsByDriver).filter(
+    const playerRaceResults = Object.values(weekend.race.resultsByDriver).filter(
       (value): value is WeekendRaceResult => value !== null
     );
 
-    if (raceResults.length === 0) {
+    if (playerRaceResults.length === 0) {
       return;
     }
 
@@ -241,6 +271,13 @@ export default function HomePage() {
       postRaceResultsByDriver[driverId] = raceResult
         ? buildWeekendPostRaceResult(raceResult)
         : null;
+    });
+
+    const roundResults = buildFullFieldRoundResults({
+      round: weekend.round,
+      circuitId: weekend.circuitId,
+      weatherId: weekend.weatherId,
+      playerResultsByDriver: weekend.race.resultsByDriver,
     });
 
     setWeekend((current: AppWeekendState) => {
@@ -262,7 +299,7 @@ export default function HomePage() {
         weekendId: weekend.id,
         round: weekend.round,
         circuitId: weekend.circuitId,
-        raceResults,
+        roundResults,
       })
     );
   }
@@ -298,7 +335,7 @@ export default function HomePage() {
             Timed Weekend Session Flow
           </h1>
           <p className="mt-3 max-w-4xl text-sm text-neutral-400">
-            Weekend flow now supports both drivers with custom stint-based strategy.
+            Weekend flow now supports both drivers, shared session classification, custom stint strategy and full field standings.
           </p>
 
           <div className="mt-4 flex flex-wrap gap-3">
