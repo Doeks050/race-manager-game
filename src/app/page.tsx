@@ -1,410 +1,255 @@
 "use client";
 
-import WeekendFlowPanel from "@/components/race/WeekendFlowPanel";
-import { createDefaultRaceStrategy } from "@/lib/raceStrategy";
-import {
-  buildFullFieldRoundResults,
-  classifyPracticeResultsAgainstField,
-  classifyQualifyingResultsAgainstField,
-  classifyRaceResultsAgainstField,
-} from "@/lib/fullField";
-import { applyWeekendToSeason, createInitialSeasonState } from "@/lib/season";
-import {
-  completeWeekendPractice,
-  completeWeekendPostRace,
-  completeWeekendQualifying,
-  completeWeekendRace,
-  markWeekendRewardsApplied,
-  setWeekendDriverStrategy,
-  setWeekendDriverTraining,
-} from "@/lib/weekend";
-import {
-  advanceToNextWeekend,
-  canAdvanceWeekend,
-  createWeekendFromCalendarRound,
-} from "@/lib/weekendAdvance";
-import { buildWeekendPostRaceResult } from "@/lib/weekendPostRace";
-import { simulateWeekendPractice } from "@/lib/weekendPractice";
-import { simulateWeekendQualifying } from "@/lib/weekendQualifying";
-import { simulateWeekendRace } from "@/lib/weekendRace";
-import {
-  DEV_WEEKEND_MODE,
-  formatSessionLabel,
-  getWeekendSessionInfo,
-} from "@/lib/weekendSession";
-import type { DriverRaceStrategy } from "@/types/raceStrategy";
-import type { SeasonState } from "@/types/season";
-import type { WeekendPostRaceResult } from "@/types/weekendPostRace";
-import type { WeekendPracticeResult } from "@/types/weekendPractice";
-import type {
-  WeekendQualifyingResult,
-  WeekendTrainingSelection,
-} from "@/types/weekendQualifying";
-import type { WeekendRaceResult } from "@/types/weekendRace";
-import type { WeekendState } from "@/types/weekend";
-import { useEffect, useMemo, useState } from "react";
-
-type AppWeekendState = WeekendState<
-  WeekendTrainingSelection,
-  WeekendPracticeResult,
-  WeekendQualifyingResult,
-  WeekendRaceResult,
-  WeekendPostRaceResult
->;
-
-function createInitialWeekend(): AppWeekendState {
-  const weekend = createWeekendFromCalendarRound({
-    season: 1,
-    round: 1,
-    teamId: "starter-team",
-    activeDriverId: "driver-1",
-  });
-
-  if (!weekend) {
-    throw new Error("Could not create initial weekend from calendar round 1.");
-  }
-
-  return weekend as AppWeekendState;
-}
+import Link from "next/link";
+import { formatCountdown, formatSessionLabel } from "@/lib/weekendSession";
+import { useGameState } from "@/hooks/useGameState";
 
 function formatIsoForDisplay(iso: string): string {
   return iso.replace("T", " ").replace(".000Z", " UTC");
 }
 
 export default function HomePage() {
-  const [weekend, setWeekend] = useState<AppWeekendState>(() => createInitialWeekend());
-  const [seasonState, setSeasonState] = useState<SeasonState>(() =>
-    createInitialSeasonState(1)
-  );
-  const [isMounted, setIsMounted] = useState(false);
-  const [nowMs, setNowMs] = useState(0);
-
-  useEffect(() => {
-    setIsMounted(true);
-    setNowMs(Date.now());
-
-    const interval = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, []);
-
-  const sessionInfo = useMemo(() => {
-    if (!isMounted) {
-      return getWeekendSessionInfo(weekend, 0);
-    }
-
-    return getWeekendSessionInfo(weekend, nowMs);
-  }, [weekend, nowMs, isMounted]);
-
-  const canAdvanceToNextWeekend = useMemo(() => {
-    return canAdvanceWeekend(weekend);
-  }, [weekend]);
-
-  const summary = useMemo(() => {
-    return {
-      devMode: DEV_WEEKEND_MODE,
-      currentSession: sessionInfo.currentSession,
-      nextSession: sessionInfo.nextSession,
-      countdownMs: sessionInfo.countdownMs,
-      permissions: sessionInfo.permissions,
-      driverSetups: weekend.driverSetups,
-      practiceCompleted: weekend.practice.isCompleted,
-      qualifyingCompleted: weekend.qualifying.isCompleted,
-      raceCompleted: weekend.race.isCompleted,
-      postRaceCompleted: weekend.postRace.isCompleted,
-      rewardsApplied: weekend.postRace.rewardsApplied,
-      seasonCurrentRound: seasonState.currentRound,
-      driverStandingsTop10: seasonState.driverStandings.slice(0, 10),
-      teamStandings: seasonState.teamStandings,
-      schedule: weekend.schedule,
-      canAdvanceToNextWeekend,
-      practiceResults: weekend.practice.resultsByDriver,
-      qualifyingResults: weekend.qualifying.resultsByDriver,
-      raceResults: weekend.race.resultsByDriver,
-    };
-  }, [sessionInfo, weekend, seasonState, canAdvanceToNextWeekend]);
-
-  function handleSetTraining(driverId: string, training: WeekendTrainingSelection) {
-    setWeekend((current: AppWeekendState) =>
-      setWeekendDriverTraining(current, driverId, training) as AppWeekendState
-    );
-  }
-
-  function handleSetStrategy(driverId: string, raceStrategy: DriverRaceStrategy) {
-    setWeekend((current: AppWeekendState) =>
-      setWeekendDriverStrategy(current, driverId, raceStrategy) as AppWeekendState
-    );
-  }
-
-  function handleRunPractice() {
-    setWeekend((current: AppWeekendState) => {
-      if (current.practice.isCompleted) {
-        return current;
-      }
-
-      const rawResultsByDriver: Record<string, WeekendPracticeResult | null> = {};
-
-      current.driverIds.forEach((driverId) => {
-        const setup = current.driverSetups[driverId];
-        const trainingPlan =
-          setup?.trainingPlan ?? {
-            slots: 1,
-            trim: "balanced",
-            skill: "consistency",
-            compound: "medium",
-          };
-
-        rawResultsByDriver[driverId] = simulateWeekendPractice({
-          teamId: current.teamId,
-          circuitId: current.circuitId,
-          weatherId: current.weatherId,
-          activeDriverId: driverId,
-          trainingPlan,
-        });
-      });
-
-      const classifiedResults = classifyPracticeResultsAgainstField({
-        round: current.round,
-        circuitId: current.circuitId,
-        weatherId: current.weatherId,
-        playerResultsByDriver: rawResultsByDriver,
-      });
-
-      return completeWeekendPractice(current, classifiedResults) as AppWeekendState;
-    });
-  }
-
-  function handleRunQualifying() {
-    setWeekend((current: AppWeekendState) => {
-      if (current.qualifying.isCompleted) {
-        return current;
-      }
-
-      const rawResultsByDriver: Record<string, WeekendQualifyingResult | null> = {};
-
-      current.driverIds.forEach((driverId) => {
-        const setup = current.driverSetups[driverId];
-        const trainingPlan =
-          setup?.trainingPlan ?? {
-            slots: 1,
-            trim: "balanced",
-            skill: "consistency",
-            compound: "medium",
-          };
-
-        rawResultsByDriver[driverId] = simulateWeekendQualifying({
-          teamId: current.teamId,
-          circuitId: current.circuitId,
-          weatherId: current.weatherId,
-          activeDriverId: driverId,
-          trainingPlan,
-        });
-      });
-
-      const classifiedResults = classifyQualifyingResultsAgainstField({
-        round: current.round,
-        circuitId: current.circuitId,
-        weatherId: current.weatherId,
-        playerResultsByDriver: rawResultsByDriver,
-      });
-
-      return completeWeekendQualifying(current, classifiedResults) as AppWeekendState;
-    });
-  }
-
-  function handleRunRace() {
-    setWeekend((current: AppWeekendState) => {
-      if (current.race.isCompleted) {
-        return current;
-      }
-
-      const rawResultsByDriver: Record<string, WeekendRaceResult | null> = {};
-
-      current.driverIds.forEach((driverId) => {
-        const setup = current.driverSetups[driverId];
-        const practiceResult = current.practice.resultsByDriver[driverId];
-        const qualifyingResult = current.qualifying.resultsByDriver[driverId];
-
-        rawResultsByDriver[driverId] = simulateWeekendRace({
-          teamId: current.teamId,
-          circuitId: current.circuitId,
-          weatherId: current.weatherId,
-          activeDriverId: driverId,
-          raceStrategy: setup?.raceStrategy ?? createDefaultRaceStrategy(2),
-          qualifyingPosition: qualifyingResult?.playerPosition ?? null,
-          practiceBoosts: practiceResult?.boosts ?? null,
-        });
-      });
-
-      const classifiedResults = classifyRaceResultsAgainstField({
-        round: current.round,
-        circuitId: current.circuitId,
-        weatherId: current.weatherId,
-        playerResultsByDriver: rawResultsByDriver,
-      });
-
-      return completeWeekendRace(current, classifiedResults) as AppWeekendState;
-    });
-  }
-
-  function handleApplyPostRace() {
-    if (weekend.postRace.rewardsApplied) {
-      return;
-    }
-
-    const playerRaceResults = Object.values(weekend.race.resultsByDriver).filter(
-      (value): value is WeekendRaceResult => value !== null
-    );
-
-    if (playerRaceResults.length === 0) {
-      return;
-    }
-
-    const postRaceResultsByDriver: Record<string, WeekendPostRaceResult | null> = {};
-
-    weekend.driverIds.forEach((driverId) => {
-      const raceResult = weekend.race.resultsByDriver[driverId];
-      postRaceResultsByDriver[driverId] = raceResult
-        ? buildWeekendPostRaceResult(raceResult)
-        : null;
-    });
-
-    const roundResults = buildFullFieldRoundResults({
-      round: weekend.round,
-      circuitId: weekend.circuitId,
-      weatherId: weekend.weatherId,
-      playerResultsByDriver: weekend.race.resultsByDriver,
-    });
-
-    setWeekend((current: AppWeekendState) => {
-      if (!current.race.isCompleted || current.postRace.rewardsApplied) {
-        return current;
-      }
-
-      const withPostRace = completeWeekendPostRace(
-        current,
-        postRaceResultsByDriver
-      ) as AppWeekendState;
-
-      return markWeekendRewardsApplied(withPostRace) as AppWeekendState;
-    });
-
-    setSeasonState((currentSeason: SeasonState) =>
-      applyWeekendToSeason({
-        seasonState: currentSeason,
-        weekendId: weekend.id,
-        round: weekend.round,
-        circuitId: weekend.circuitId,
-        roundResults,
-      })
-    );
-  }
-
-  function handleAdvanceToNextWeekend() {
-    const result = advanceToNextWeekend({
-      currentWeekend: weekend,
-      seasonState,
-    });
-
-    if (!result.nextWeekend) {
-      return;
-    }
-
-    setWeekend(result.nextWeekend as AppWeekendState);
-    setNowMs(Date.now());
-  }
-
-  function handleResetWeekend() {
-    setWeekend(createInitialWeekend());
-    setSeasonState(createInitialSeasonState(1));
-    setNowMs(Date.now());
-  }
+  const {
+    weekend,
+    seasonState,
+    team,
+    isMounted,
+    hasLoadedSave,
+    sessionInfo,
+    canAdvanceToNextWeekend,
+    handleResetWeekend,
+  } = useGameState();
 
   return (
     <main className="min-h-screen bg-black text-white">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-6 md:py-8">
-        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-6 md:py-8">
+        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-6">
           <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
             Race Manager Game
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            Timed Weekend Session Flow
+            Team Dashboard
           </h1>
-          <p className="mt-3 max-w-4xl text-sm text-neutral-400">
-            Weekend flow now supports both drivers, shared session classification, custom stint strategy and full field standings.
+          <p className="mt-3 max-w-3xl text-sm text-neutral-400">
+            Gebruik dit dashboard als centrale hub voor team management, upgrades, weekendflow, standings en resultaten.
           </p>
 
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link
+              href="/team"
+              className="rounded-2xl border border-white bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
+            >
+              Open Team Page
+            </Link>
+
+            <Link
+              href="/upgrades"
+              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
+            >
+              Open Upgrades
+            </Link>
+
+            <Link
+              href="/management"
+              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
+            >
+              Open Management
+            </Link>
+
+            <Link
+              href="/weekend"
+              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
+            >
+              Open Weekend Center
+            </Link>
+
+            <Link
+              href="/results"
+              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
+            >
+              Open Results
+            </Link>
+
+            <Link
+              href="/standings"
+              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
+            >
+              Open Standings
+            </Link>
+
             <button
               type="button"
               onClick={handleResetWeekend}
-              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:border-neutral-500"
+              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
             >
               Reset Demo Weekend
             </button>
           </div>
+        </section>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs uppercase tracking-wide text-neutral-500">
-                Practice At
-              </p>
-              <p className="mt-1 text-sm text-white">
-                {formatIsoForDisplay(weekend.schedule.practiceAt)}
-              </p>
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Save Status
+            </p>
+            <p className="mt-2 text-sm text-white">
+              {hasLoadedSave ? "Local save active" : "Loading save..."}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Current Session
+            </p>
+            <p className="mt-2 text-sm text-white">
+              {formatSessionLabel(sessionInfo.currentSession)}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Countdown
+            </p>
+            <p className="mt-2 text-sm text-white">
+              {formatCountdown(isMounted ? sessionInfo.countdownMs : null)}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Credits
+            </p>
+            <p className="mt-2 text-sm text-white">{team.credits}</p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Next Weekend Ready
+            </p>
+            <p className="mt-2 text-sm text-white">
+              {canAdvanceToNextWeekend ? "Yes" : "No"}
+            </p>
+          </div>
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-sm font-semibold text-white">Season Snapshot</p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                <p className="text-xs text-neutral-500">Season</p>
+                <p className="mt-1 text-lg font-semibold text-white">{seasonState.season}</p>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                <p className="text-xs text-neutral-500">Current Round</p>
+                <p className="mt-1 text-lg font-semibold text-white">{seasonState.currentRound}</p>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                <p className="text-xs text-neutral-500">Team</p>
+                <p className="mt-1 text-lg font-semibold text-white">{team.name}</p>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                <p className="text-xs text-neutral-500">Sponsor</p>
+                <p className="mt-1 text-lg font-semibold text-white">{team.sponsor}</p>
+              </div>
             </div>
+          </div>
 
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs uppercase tracking-wide text-neutral-500">
-                Qualifying At
-              </p>
-              <p className="mt-1 text-sm text-white">
-                {formatIsoForDisplay(weekend.schedule.qualifyingAt)}
-              </p>
-            </div>
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-sm font-semibold text-white">Weekend Snapshot</p>
 
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs uppercase tracking-wide text-neutral-500">
-                Race At
-              </p>
-              <p className="mt-1 text-sm text-white">
-                {formatIsoForDisplay(weekend.schedule.raceAt)}
-              </p>
+            <div className="mt-4 flex flex-col gap-3">
+              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                <p className="text-xs text-neutral-500">Round</p>
+                <p className="mt-1 text-sm text-white">{weekend.round}</p>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                <p className="text-xs text-neutral-500">Circuit</p>
+                <p className="mt-1 text-sm text-white">{weekend.circuitId}</p>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                <p className="text-xs text-neutral-500">Weather</p>
+                <p className="mt-1 text-sm text-white">{weekend.weatherId}</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                  <p className="text-xs text-neutral-500">Practice At</p>
+                  <p className="mt-1 text-xs text-white">
+                    {formatIsoForDisplay(weekend.schedule.practiceAt)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                  <p className="text-xs text-neutral-500">Qualifying At</p>
+                  <p className="mt-1 text-xs text-white">
+                    {formatIsoForDisplay(weekend.schedule.qualifyingAt)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                  <p className="text-xs text-neutral-500">Race At</p>
+                  <p className="mt-1 text-xs text-white">
+                    {formatIsoForDisplay(weekend.schedule.raceAt)}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <WeekendFlowPanel
-          weekend={weekend}
-          seasonState={seasonState}
-          currentSession={sessionInfo.currentSession}
-          countdownMs={isMounted ? sessionInfo.countdownMs : null}
-          nextSessionLabel={
-            sessionInfo.nextSession ? formatSessionLabel(sessionInfo.nextSession) : null
-          }
-          permissions={sessionInfo.permissions}
-          canAdvanceToNextWeekend={canAdvanceToNextWeekend}
-          onSetTraining={handleSetTraining}
-          onSetStrategy={handleSetStrategy}
-          onRunPractice={handleRunPractice}
-          onRunQualifying={handleRunQualifying}
-          onRunRace={handleRunRace}
-          onApplyPostRace={handleApplyPostRace}
-          onAdvanceToNextWeekend={handleAdvanceToNextWeekend}
-        />
+        <section className="grid gap-4 lg:grid-cols-6">
+          <Link
+            href="/team"
+            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
+          >
+            <p className="text-sm font-semibold text-white">Team Page</p>
+            <p className="mt-2 text-sm text-neutral-400">Drivers and current setups.</p>
+          </Link>
 
-        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-          <p className="text-sm font-semibold text-white">Debug Summary</p>
+          <Link
+            href="/upgrades"
+            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
+          >
+            <p className="text-sm font-semibold text-white">Upgrades Page</p>
+            <p className="mt-2 text-sm text-neutral-400">Spend credits and improve parts.</p>
+          </Link>
 
-          <div className="mt-4 overflow-x-auto">
-            <pre className="rounded-2xl border border-neutral-800 bg-black p-4 text-xs leading-6 text-neutral-300">
-{JSON.stringify(summary, null, 2)}
-            </pre>
-          </div>
+          <Link
+            href="/management"
+            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
+          >
+            <p className="text-sm font-semibold text-white">Management Center</p>
+            <p className="mt-2 text-sm text-neutral-400">Configure driver training and strategy.</p>
+          </Link>
+
+          <Link
+            href="/weekend"
+            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
+          >
+            <p className="text-sm font-semibold text-white">Weekend Center</p>
+            <p className="mt-2 text-sm text-neutral-400">Run sessions and post-race.</p>
+          </Link>
+
+          <Link
+            href="/results"
+            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
+          >
+            <p className="text-sm font-semibold text-white">Results Page</p>
+            <p className="mt-2 text-sm text-neutral-400">Session outcomes and rewards.</p>
+          </Link>
+
+          <Link
+            href="/standings"
+            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
+          >
+            <p className="text-sm font-semibold text-white">Standings</p>
+            <p className="mt-2 text-sm text-neutral-400">Full championship tables.</p>
+          </Link>
         </section>
       </div>
     </main>
