@@ -1,4 +1,4 @@
-import type { AppTeamState, TeamPartKey } from "@/types/gameState";
+import type { AppDriverState, AppTeamState, TeamPartKey } from "@/types/gameState";
 
 export interface DerivedCarStats {
   power: number;
@@ -33,8 +33,11 @@ export const TEAM_PART_LABELS: Record<TeamPartKey, string> = {
   floor: "Floor",
 };
 
-// Temporary app-side starter budget until this comes from a dedicated economy bootstrap.
 const STARTER_TEAM_CREDITS = 5000;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 export function createStarterAppTeam(): AppTeamState {
   return {
@@ -45,8 +48,20 @@ export function createStarterAppTeam(): AppTeamState {
     credits: STARTER_TEAM_CREDITS,
     activeDriverId: "driver-1",
     drivers: [
-      { id: "driver-1", name: "Driver 1" },
-      { id: "driver-2", name: "Driver 2" },
+      {
+        id: "driver-1",
+        name: "Driver 1",
+        fitness: 100,
+        morale: 100,
+        experience: 0,
+      },
+      {
+        id: "driver-2",
+        name: "Driver 2",
+        fitness: 100,
+        morale: 100,
+        experience: 0,
+      },
     ],
     parts: {
       engine: 20,
@@ -86,6 +101,112 @@ export function upgradeTeamPart(team: AppTeamState, partKey: TeamPartKey): AppTe
       ...team.parts,
       [partKey]: currentValue + 1,
     },
+  };
+}
+
+export function getDriverById(team: AppTeamState, driverId: string): AppDriverState | null {
+  return team.drivers.find((driver) => driver.id === driverId) ?? null;
+}
+
+export function setActiveTeamDriver(team: AppTeamState, driverId: string): AppTeamState {
+  const exists = team.drivers.some((driver) => driver.id === driverId);
+
+  if (!exists) {
+    return team;
+  }
+
+  return {
+    ...team,
+    activeDriverId: driverId,
+  };
+}
+
+export function getDriverFitnessRecoveryCost(driver: AppDriverState): number {
+  const missing = Math.max(0, 100 - driver.fitness);
+  return missing === 0 ? 0 : Math.round(40 + missing * 6);
+}
+
+export function getDriverMoraleRecoveryCost(driver: AppDriverState): number {
+  const missing = Math.max(0, 100 - driver.morale);
+  return missing === 0 ? 0 : Math.round(30 + missing * 5);
+}
+
+export function canRecoverDriverFitness(team: AppTeamState, driverId: string): boolean {
+  const driver = getDriverById(team, driverId);
+  if (!driver) return false;
+  const cost = getDriverFitnessRecoveryCost(driver);
+  return cost > 0 && team.credits >= cost;
+}
+
+export function canRecoverDriverMorale(team: AppTeamState, driverId: string): boolean {
+  const driver = getDriverById(team, driverId);
+  if (!driver) return false;
+  const cost = getDriverMoraleRecoveryCost(driver);
+  return cost > 0 && team.credits >= cost;
+}
+
+export function recoverDriverFitness(team: AppTeamState, driverId: string): AppTeamState {
+  const driver = getDriverById(team, driverId);
+
+  if (!driver) {
+    return team;
+  }
+
+  const cost = getDriverFitnessRecoveryCost(driver);
+
+  if (cost <= 0 || team.credits < cost) {
+    return team;
+  }
+
+  return {
+    ...team,
+    credits: team.credits - cost,
+    drivers: team.drivers.map((entry) =>
+      entry.id === driverId
+        ? {
+            ...entry,
+            fitness: 100,
+          }
+        : entry
+    ),
+  };
+}
+
+export function recoverDriverMorale(team: AppTeamState, driverId: string): AppTeamState {
+  const driver = getDriverById(team, driverId);
+
+  if (!driver) {
+    return team;
+  }
+
+  const cost = getDriverMoraleRecoveryCost(driver);
+
+  if (cost <= 0 || team.credits < cost) {
+    return team;
+  }
+
+  return {
+    ...team,
+    credits: team.credits - cost,
+    drivers: team.drivers.map((entry) =>
+      entry.id === driverId
+        ? {
+            ...entry,
+            morale: 100,
+          }
+        : entry
+    ),
+  };
+}
+
+export function applyPostRaceDriverWear(team: AppTeamState, fitnessLoss: number, moraleDelta: number): AppTeamState {
+  return {
+    ...team,
+    drivers: team.drivers.map((driver) => ({
+      ...driver,
+      fitness: clamp(driver.fitness - fitnessLoss, 0, 100),
+      morale: clamp(driver.morale + moraleDelta, 0, 100),
+    })),
   };
 }
 

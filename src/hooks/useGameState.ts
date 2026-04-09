@@ -30,10 +30,18 @@ import { simulateWeekendQualifying } from "@/lib/weekendQualifying";
 import { simulateWeekendRace } from "@/lib/weekendRace";
 import { DEV_WEEKEND_MODE, getWeekendSessionInfo } from "@/lib/weekendSession";
 import {
+  applyPostRaceDriverWear,
   canAffordPartUpgrade,
+  canRecoverDriverFitness,
+  canRecoverDriverMorale,
   createStarterAppTeam,
   getDerivedCarStats,
+  getDriverFitnessRecoveryCost,
+  getDriverMoraleRecoveryCost,
   getPartUpgradeCost,
+  recoverDriverFitness,
+  recoverDriverMorale,
+  setActiveTeamDriver,
   TEAM_PART_KEYS,
   upgradeTeamPart,
 } from "@/lib/playerTeam";
@@ -157,6 +165,18 @@ export function useGameState() {
     [team]
   );
 
+  const driverRecoveryOverview = useMemo(
+    () =>
+      team.drivers.map((driver) => ({
+        driverId: driver.id,
+        fitnessCost: getDriverFitnessRecoveryCost(driver),
+        moraleCost: getDriverMoraleRecoveryCost(driver),
+        canRecoverFitness: canRecoverDriverFitness(team, driver.id),
+        canRecoverMorale: canRecoverDriverMorale(team, driver.id),
+      })),
+    [team]
+  );
+
   const summary = useMemo(() => {
     return {
       devMode: DEV_WEEKEND_MODE,
@@ -168,6 +188,7 @@ export function useGameState() {
       team,
       derivedCarStats,
       upgradesOverview,
+      driverRecoveryOverview,
       driverSetups: weekend.driverSetups,
       practiceCompleted: weekend.practice.isCompleted,
       qualifyingCompleted: weekend.qualifying.isCompleted,
@@ -190,6 +211,7 @@ export function useGameState() {
     team,
     derivedCarStats,
     upgradesOverview,
+    driverRecoveryOverview,
     canAdvanceToNextWeekend,
     hasLoadedSave,
   ]);
@@ -332,6 +354,8 @@ export function useGameState() {
 
     const postRaceResultsByDriver: Record<string, WeekendPostRaceResult | null> = {};
     let creditsEarnedForTeam = 0;
+    let maxFitnessLoss = 0;
+    let moraleDelta = 0;
 
     weekend.driverIds.forEach((driverId) => {
       const raceResult = weekend.race.resultsByDriver[driverId];
@@ -340,7 +364,10 @@ export function useGameState() {
         : null;
 
       if (postRaceResultsByDriver[driverId]) {
-        creditsEarnedForTeam += postRaceResultsByDriver[driverId]!.rewards.creditsEarned;
+        const rewards = postRaceResultsByDriver[driverId]!.rewards;
+        creditsEarnedForTeam += rewards.creditsEarned;
+        maxFitnessLoss = Math.max(maxFitnessLoss, rewards.fitnessLoss);
+        moraleDelta = rewards.moraleChange;
       }
     });
 
@@ -374,10 +401,14 @@ export function useGameState() {
       })
     );
 
-    setTeam((currentTeam) => ({
-      ...currentTeam,
-      credits: currentTeam.credits + creditsEarnedForTeam,
-    }));
+    setTeam((currentTeam) => {
+      const withCredits = {
+        ...currentTeam,
+        credits: currentTeam.credits + creditsEarnedForTeam,
+      };
+
+      return applyPostRaceDriverWear(withCredits, maxFitnessLoss, moraleDelta);
+    });
   }
 
   function handleAdvanceToNextWeekend() {
@@ -398,6 +429,18 @@ export function useGameState() {
     setTeam((currentTeam) => upgradeTeamPart(currentTeam, partKey));
   }
 
+  function handleSetActiveDriver(driverId: string) {
+    setTeam((currentTeam) => setActiveTeamDriver(currentTeam, driverId));
+  }
+
+  function handleRecoverDriverFitness(driverId: string) {
+    setTeam((currentTeam) => recoverDriverFitness(currentTeam, driverId));
+  }
+
+  function handleRecoverDriverMorale(driverId: string) {
+    setTeam((currentTeam) => recoverDriverMorale(currentTeam, driverId));
+  }
+
   function handleResetWeekend() {
     const fresh = createFreshGameState();
     clearGameState();
@@ -413,6 +456,7 @@ export function useGameState() {
     team,
     derivedCarStats,
     upgradesOverview,
+    driverRecoveryOverview,
     isMounted,
     hasLoadedSave,
     sessionInfo,
@@ -426,6 +470,9 @@ export function useGameState() {
     handleApplyPostRace,
     handleAdvanceToNextWeekend,
     handleUpgradePart,
+    handleSetActiveDriver,
+    handleRecoverDriverFitness,
+    handleRecoverDriverMorale,
     handleResetWeekend,
   };
 }

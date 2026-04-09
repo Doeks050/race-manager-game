@@ -30,6 +30,9 @@ export type TeamPartKey =
 export interface AppDriverState {
   id: string;
   name: string;
+  fitness: number;
+  morale: number;
+  experience: number;
 }
 
 export interface AppTeamState {
