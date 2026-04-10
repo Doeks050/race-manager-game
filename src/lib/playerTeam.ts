@@ -46,7 +46,8 @@ export function createStarterAppTeam(): AppTeamState {
     color: "#ffffff",
     sponsor: "Open Grid",
     credits: STARTER_TEAM_CREDITS,
-    activeDriverId: "driver-1",
+    raceDriverIds: ["driver-1", "driver-2"],
+    reserveDriverIds: ["driver-3", "driver-4"],
     drivers: [
       {
         id: "driver-1",
@@ -58,6 +59,20 @@ export function createStarterAppTeam(): AppTeamState {
       {
         id: "driver-2",
         name: "Driver 2",
+        fitness: 100,
+        morale: 100,
+        experience: 0,
+      },
+      {
+        id: "driver-3",
+        name: "Driver 3",
+        fitness: 100,
+        morale: 100,
+        experience: 0,
+      },
+      {
+        id: "driver-4",
+        name: "Driver 4",
         fitness: 100,
         morale: 100,
         experience: 0,
@@ -74,6 +89,147 @@ export function createStarterAppTeam(): AppTeamState {
       cooling: 20,
       floor: 20,
     },
+  };
+}
+
+export function normalizeLoadedTeam(raw: unknown): AppTeamState {
+  const fresh = createStarterAppTeam();
+
+  if (!raw || typeof raw !== "object") {
+    return fresh;
+  }
+
+  const candidate = raw as Partial<AppTeamState>;
+
+  const drivers =
+    Array.isArray(candidate.drivers) && candidate.drivers.length >= 2
+      ? candidate.drivers.map((driver, index) => {
+          const d = driver as Partial<AppDriverState>;
+          return {
+            id: typeof d.id === "string" ? d.id : `driver-${index + 1}`,
+            name: typeof d.name === "string" ? d.name : `Driver ${index + 1}`,
+            fitness: typeof d.fitness === "number" ? clamp(d.fitness, 0, 100) : 100,
+            morale: typeof d.morale === "number" ? clamp(d.morale, 0, 100) : 100,
+            experience: typeof d.experience === "number" ? Math.max(0, d.experience) : 0,
+          };
+        })
+      : fresh.drivers;
+
+  const driverIds = drivers.map((driver) => driver.id);
+
+  const raceDriverIds: [string, string] =
+    Array.isArray(candidate.raceDriverIds) &&
+    candidate.raceDriverIds.length === 2 &&
+    driverIds.includes(candidate.raceDriverIds[0]) &&
+    driverIds.includes(candidate.raceDriverIds[1]) &&
+    candidate.raceDriverIds[0] !== candidate.raceDriverIds[1]
+      ? [candidate.raceDriverIds[0], candidate.raceDriverIds[1]]
+      : [
+          typeof (candidate as { activeDriverId?: string }).activeDriverId === "string" &&
+          driverIds.includes((candidate as { activeDriverId?: string }).activeDriverId!)
+            ? (candidate as { activeDriverId?: string }).activeDriverId!
+            : drivers[0].id,
+          drivers.find((driver) => driver.id !== (
+            typeof (candidate as { activeDriverId?: string }).activeDriverId === "string" &&
+            driverIds.includes((candidate as { activeDriverId?: string }).activeDriverId!)
+              ? (candidate as { activeDriverId?: string }).activeDriverId!
+              : drivers[0].id
+          ))?.id ?? drivers[1].id,
+        ];
+
+  const reserveDriverIds = driverIds.filter((id) => !raceDriverIds.includes(id));
+
+  return {
+    id: typeof candidate.id === "string" ? candidate.id : fresh.id,
+    name: typeof candidate.name === "string" ? candidate.name : fresh.name,
+    color: typeof candidate.color === "string" ? candidate.color : fresh.color,
+    sponsor: typeof candidate.sponsor === "string" ? candidate.sponsor : fresh.sponsor,
+    credits: typeof candidate.credits === "number" ? Math.max(0, candidate.credits) : fresh.credits,
+    raceDriverIds,
+    reserveDriverIds,
+    drivers,
+    parts:
+      candidate.parts && typeof candidate.parts === "object"
+        ? {
+            engine: typeof candidate.parts.engine === "number" ? candidate.parts.engine : fresh.parts.engine,
+            gearbox: typeof candidate.parts.gearbox === "number" ? candidate.parts.gearbox : fresh.parts.gearbox,
+            chassis: typeof candidate.parts.chassis === "number" ? candidate.parts.chassis : fresh.parts.chassis,
+            frontWing: typeof candidate.parts.frontWing === "number" ? candidate.parts.frontWing : fresh.parts.frontWing,
+            rearWing: typeof candidate.parts.rearWing === "number" ? candidate.parts.rearWing : fresh.parts.rearWing,
+            suspension: typeof candidate.parts.suspension === "number" ? candidate.parts.suspension : fresh.parts.suspension,
+            brakes: typeof candidate.parts.brakes === "number" ? candidate.parts.brakes : fresh.parts.brakes,
+            cooling: typeof candidate.parts.cooling === "number" ? candidate.parts.cooling : fresh.parts.cooling,
+            floor: typeof candidate.parts.floor === "number" ? candidate.parts.floor : fresh.parts.floor,
+          }
+        : fresh.parts,
+  };
+}
+
+export function getDriverById(team: AppTeamState, driverId: string): AppDriverState | null {
+  return team.drivers.find((driver) => driver.id === driverId) ?? null;
+}
+
+export function getRaceDrivers(team: AppTeamState): AppDriverState[] {
+  return team.raceDriverIds
+    .map((driverId) => getDriverById(team, driverId))
+    .filter((driver): driver is AppDriverState => driver !== null);
+}
+
+export function getReserveDrivers(team: AppTeamState): AppDriverState[] {
+  return team.reserveDriverIds
+    .map((driverId) => getDriverById(team, driverId))
+    .filter((driver): driver is AppDriverState => driver !== null);
+}
+
+export function setRaceSeatDriver(
+  team: AppTeamState,
+  seatIndex: 0 | 1,
+  driverId: string
+): AppTeamState {
+  const exists = team.drivers.some((driver) => driver.id === driverId);
+
+  if (!exists) {
+    return team;
+  }
+
+  const currentRace = [...team.raceDriverIds] as [string, string];
+
+  if (currentRace[seatIndex] === driverId) {
+    return team;
+  }
+
+  const otherSeatIndex: 0 | 1 = seatIndex === 0 ? 1 : 0;
+
+  if (currentRace[otherSeatIndex] === driverId) {
+    const swapped: [string, string] =
+      seatIndex === 0
+        ? [driverId, currentRace[0]]
+        : [currentRace[1], driverId];
+
+    return {
+      ...team,
+      raceDriverIds: swapped,
+      reserveDriverIds: team.drivers
+        .map((driver) => driver.id)
+        .filter((id) => !swapped.includes(id)),
+    };
+  }
+
+  const replacedDriverId = currentRace[seatIndex];
+  currentRace[seatIndex] = driverId;
+
+  const reserveDriverIds = team.drivers
+    .map((driver) => driver.id)
+    .filter((id) => !currentRace.includes(id));
+
+  if (!reserveDriverIds.includes(replacedDriverId)) {
+    reserveDriverIds.push(replacedDriverId);
+  }
+
+  return {
+    ...team,
+    raceDriverIds: currentRace,
+    reserveDriverIds: reserveDriverIds.filter((id, index, arr) => arr.indexOf(id) === index),
   };
 }
 
@@ -101,23 +257,6 @@ export function upgradeTeamPart(team: AppTeamState, partKey: TeamPartKey): AppTe
       ...team.parts,
       [partKey]: currentValue + 1,
     },
-  };
-}
-
-export function getDriverById(team: AppTeamState, driverId: string): AppDriverState | null {
-  return team.drivers.find((driver) => driver.id === driverId) ?? null;
-}
-
-export function setActiveTeamDriver(team: AppTeamState, driverId: string): AppTeamState {
-  const exists = team.drivers.some((driver) => driver.id === driverId);
-
-  if (!exists) {
-    return team;
-  }
-
-  return {
-    ...team,
-    activeDriverId: driverId,
   };
 }
 
@@ -199,14 +338,22 @@ export function recoverDriverMorale(team: AppTeamState, driverId: string): AppTe
   };
 }
 
-export function applyPostRaceDriverWear(team: AppTeamState, fitnessLoss: number, moraleDelta: number): AppTeamState {
+export function applyPostRaceDriverWear(
+  team: AppTeamState,
+  fitnessLoss: number,
+  moraleDelta: number
+): AppTeamState {
   return {
     ...team,
-    drivers: team.drivers.map((driver) => ({
-      ...driver,
-      fitness: clamp(driver.fitness - fitnessLoss, 0, 100),
-      morale: clamp(driver.morale + moraleDelta, 0, 100),
-    })),
+    drivers: team.drivers.map((driver) =>
+      team.raceDriverIds.includes(driver.id)
+        ? {
+            ...driver,
+            fitness: clamp(driver.fitness - fitnessLoss, 0, 100),
+            morale: clamp(driver.morale + moraleDelta, 0, 100),
+          }
+        : driver
+    ),
   };
 }
 

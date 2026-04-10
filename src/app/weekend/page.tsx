@@ -9,6 +9,8 @@ export default function WeekendPage() {
   const {
     weekend,
     seasonState,
+    raceDrivers,
+    reserveDrivers,
     isMounted,
     sessionInfo,
     canAdvanceToNextWeekend,
@@ -41,11 +43,12 @@ export default function WeekendPage() {
 
             <div className="flex flex-wrap gap-3">
               <Link href="/" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Back to Dashboard</Link>
-              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Team Page</Link>
-              <Link href="/upgrades" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Upgrades</Link>
-              <Link href="/management" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Management</Link>
-              <Link href="/results" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Results</Link>
-              <Link href="/standings" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Standings</Link>
+              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Team</Link>
+              <Link href="/upgrades" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Upgrades</Link>
+              <Link href="/recovery" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Recovery</Link>
+              <Link href="/management" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Management</Link>
+              <Link href="/results" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Results</Link>
+              <Link href="/standings" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Standings</Link>
               <button
                 type="button"
                 onClick={handleResetWeekend}
@@ -53,6 +56,54 @@ export default function WeekendPage() {
               >
                 Reset Demo Weekend
               </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-sm font-semibold text-white">Current Race Line-up</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {raceDrivers.map((driver, index) => (
+                <div
+                  key={driver.id}
+                  className="rounded-2xl border border-neutral-800 bg-black p-4"
+                >
+                  <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{driver.name}</p>
+                  <p className="mt-2 text-sm text-neutral-300">
+                    Fitness <span className="text-white">{driver.fitness}</span> · Morale{" "}
+                    <span className="text-white">{driver.morale}</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-sm font-semibold text-white">Reserve Bench</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {reserveDrivers.map((driver) => (
+                <div
+                  key={driver.id}
+                  className="rounded-2xl border border-neutral-800 bg-black p-4"
+                >
+                  <p className="text-sm font-semibold text-white">{driver.name}</p>
+                  <p className="mt-2 text-sm text-neutral-300">
+                    Fitness <span className="text-white">{driver.fitness}</span> · Morale{" "}
+                    <span className="text-white">{driver.morale}</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4">
+              <Link
+                href="/recovery"
+                className="inline-flex rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:border-neutral-500"
+              >
+                Open Recovery / Rotation
+              </Link>
             </div>
           </div>
         </section>

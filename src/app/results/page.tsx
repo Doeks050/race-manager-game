@@ -6,17 +6,9 @@ import { formatRaceTime } from "@/lib/weekendRace";
 import { formatCountdown, formatSessionLabel } from "@/lib/weekendSession";
 import { useGameState } from "@/hooks/useGameState";
 
-const DRIVER_NAMES: Record<string, string> = {
-  "driver-1": "Driver 1",
-  "driver-2": "Driver 2",
-};
-
-function getDriverName(driverId: string): string {
-  return DRIVER_NAMES[driverId] ?? driverId;
-}
-
 export default function ResultsPage() {
-  const { weekend, team, isMounted, sessionInfo, handleResetWeekend } = useGameState();
+  const { weekend, team, raceDrivers, reserveDrivers, isMounted, sessionInfo, handleResetWeekend } =
+    useGameState();
 
   const hasPractice = weekend.practice.isCompleted;
   const hasQualifying = weekend.qualifying.isCompleted;
@@ -32,17 +24,17 @@ export default function ResultsPage() {
               <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">Results Page</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight">Weekend Results Overview</h1>
               <p className="mt-2 text-sm text-neutral-400">
-                Eén centrale plek voor practice, qualifying, race en post-race uitkomsten van jouw team.
+                Results van de huidige 2 race drivers. Reserve drivers rijden niet mee in deze weekend output.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
               <Link href="/" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Back to Dashboard</Link>
-              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Team Page</Link>
-              <Link href="/upgrades" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Upgrades</Link>
-              <Link href="/management" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Management</Link>
-              <Link href="/weekend" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Weekend Center</Link>
-              <Link href="/standings" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Standings</Link>
+              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Team</Link>
+              <Link href="/upgrades" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Upgrades</Link>
+              <Link href="/recovery" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Recovery</Link>
+              <Link href="/management" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Management</Link>
+              <Link href="/weekend" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Weekend</Link>
               <button
                 type="button"
                 onClick={handleResetWeekend}
@@ -54,7 +46,7 @@ export default function ResultsPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-5">
+        <section className="grid gap-4 md:grid-cols-6">
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
             <p className="text-xs uppercase tracking-wide text-neutral-500">Current Session</p>
             <p className="mt-2 text-sm text-white">{formatSessionLabel(sessionInfo.currentSession)}</p>
@@ -81,18 +73,52 @@ export default function ResultsPage() {
             <p className="text-xs uppercase tracking-wide text-neutral-500">Credits</p>
             <p className="mt-2 text-sm text-white">{team.credits}</p>
           </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Race Drivers</p>
+            <p className="mt-2 text-sm text-white">
+              {raceDrivers.map((driver) => driver.name).join(" / ")}
+            </p>
+          </div>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-sm font-semibold text-white">Weekend Line-up</p>
+            <div className="mt-4 grid gap-3">
+              {raceDrivers.map((driver, index) => (
+                <div key={driver.id} className="rounded-2xl border border-neutral-800 bg-black p-4">
+                  <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{driver.name}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-sm font-semibold text-white">Reserves</p>
+            <div className="mt-4 grid gap-3">
+              {reserveDrivers.map((driver) => (
+                <div key={driver.id} className="rounded-2xl border border-neutral-800 bg-black p-4">
+                  <p className="text-sm font-semibold text-white">{driver.name}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
           <p className="text-sm font-semibold text-white">Practice Results</p>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            {weekend.driverIds.map((driverId) => {
+            {weekend.driverIds.map((driverId, index) => {
+              const driver = team.drivers.find((entry) => entry.id === driverId);
               const result = weekend.practice.resultsByDriver[driverId];
 
               return (
                 <div key={`practice-${driverId}`} className="rounded-2xl border border-neutral-800 bg-black p-4">
-                  <p className="text-sm font-semibold text-white">{getDriverName(driverId)}</p>
+                  <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{driver?.name ?? driverId}</p>
 
                   {result ? (
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -118,12 +144,14 @@ export default function ResultsPage() {
           <p className="text-sm font-semibold text-white">Qualifying Results</p>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            {weekend.driverIds.map((driverId) => {
+            {weekend.driverIds.map((driverId, index) => {
+              const driver = team.drivers.find((entry) => entry.id === driverId);
               const result = weekend.qualifying.resultsByDriver[driverId];
 
               return (
                 <div key={`quali-${driverId}`} className="rounded-2xl border border-neutral-800 bg-black p-4">
-                  <p className="text-sm font-semibold text-white">{getDriverName(driverId)}</p>
+                  <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{driver?.name ?? driverId}</p>
 
                   {result ? (
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -149,12 +177,14 @@ export default function ResultsPage() {
           <p className="text-sm font-semibold text-white">Race Results</p>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            {weekend.driverIds.map((driverId) => {
+            {weekend.driverIds.map((driverId, index) => {
+              const driver = team.drivers.find((entry) => entry.id === driverId);
               const result = weekend.race.resultsByDriver[driverId];
 
               return (
                 <div key={`race-${driverId}`} className="rounded-2xl border border-neutral-800 bg-black p-4">
-                  <p className="text-sm font-semibold text-white">{getDriverName(driverId)}</p>
+                  <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{driver?.name ?? driverId}</p>
 
                   {result ? (
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -184,56 +214,6 @@ export default function ResultsPage() {
                 </div>
               );
             })}
-          </div>
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-2">
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-            <p className="text-sm font-semibold text-white">Used Race Strategies</p>
-
-            <div className="mt-4 flex flex-col gap-3">
-              {weekend.driverIds.map((driverId) => {
-                const result = weekend.race.resultsByDriver[driverId];
-
-                return (
-                  <div key={`strategy-${driverId}`} className="rounded-2xl border border-neutral-800 bg-black p-4">
-                    <p className="text-sm font-semibold text-white">{getDriverName(driverId)}</p>
-                    <p className="mt-2 text-sm text-neutral-400">
-                      {result
-                        ? `${result.raceStrategy.stops} stop(s) · ${result.raceStrategy.stints.join(" → ")}`
-                        : "No race strategy used yet."}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-            <p className="text-sm font-semibold text-white">Post-Race Rewards</p>
-
-            <div className="mt-4 flex flex-col gap-3">
-              {weekend.driverIds.map((driverId) => {
-                const result = weekend.postRace.resultsByDriver[driverId];
-
-                return (
-                  <div key={`post-${driverId}`} className="rounded-2xl border border-neutral-800 bg-black p-4">
-                    <p className="text-sm font-semibold text-white">{getDriverName(driverId)}</p>
-
-                    {result ? (
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2 text-sm text-neutral-300">
-                        <p>Credits: <span className="text-white">+{result.rewards.creditsEarned}</span></p>
-                        <p>Driver XP: <span className="text-white">+{result.rewards.driverXpEarned}</span></p>
-                        <p>Morale: <span className="text-white">{result.rewards.moraleChange >= 0 ? "+" : ""}{result.rewards.moraleChange}</span></p>
-                        <p>Fitness Loss: <span className="text-white">-{result.rewards.fitnessLoss}</span></p>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-neutral-400">No post-race result yet.</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
           </div>
         </section>
       </div>

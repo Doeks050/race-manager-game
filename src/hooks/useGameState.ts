@@ -39,9 +39,12 @@ import {
   getDriverFitnessRecoveryCost,
   getDriverMoraleRecoveryCost,
   getPartUpgradeCost,
+  getRaceDrivers,
+  getReserveDrivers,
+  normalizeLoadedTeam,
   recoverDriverFitness,
   recoverDriverMorale,
-  setActiveTeamDriver,
+  setRaceSeatDriver,
   TEAM_PART_KEYS,
   upgradeTeamPart,
 } from "@/lib/playerTeam";
@@ -88,6 +91,68 @@ function createFreshGameState() {
   };
 }
 
+function syncWeekendRaceDrivers(
+  current: AppWeekendState,
+  raceDriverIds: [string, string]
+): AppWeekendState {
+  const ensureTraining = (driverId: string) =>
+    current.driverSetups[driverId]?.trainingPlan ?? {
+      slots: 1 as const,
+      trim: "balanced" as const,
+      skill: "consistency" as const,
+      compound: "medium" as const,
+    };
+
+  const ensureStrategy = (driverId: string) =>
+    current.driverSetups[driverId]?.raceStrategy ?? createDefaultRaceStrategy(2);
+
+  return {
+    ...current,
+    activeDriverId: raceDriverIds[0],
+    driverIds: [...raceDriverIds],
+    driverSetups: {
+      [raceDriverIds[0]]: {
+        driverId: raceDriverIds[0],
+        trainingPlan: ensureTraining(raceDriverIds[0]),
+        raceStrategy: ensureStrategy(raceDriverIds[0]),
+      },
+      [raceDriverIds[1]]: {
+        driverId: raceDriverIds[1],
+        trainingPlan: ensureTraining(raceDriverIds[1]),
+        raceStrategy: ensureStrategy(raceDriverIds[1]),
+      },
+    },
+    practice: {
+      ...current.practice,
+      resultsByDriver: {
+        [raceDriverIds[0]]: current.practice.resultsByDriver[raceDriverIds[0]] ?? null,
+        [raceDriverIds[1]]: current.practice.resultsByDriver[raceDriverIds[1]] ?? null,
+      },
+    },
+    qualifying: {
+      ...current.qualifying,
+      resultsByDriver: {
+        [raceDriverIds[0]]: current.qualifying.resultsByDriver[raceDriverIds[0]] ?? null,
+        [raceDriverIds[1]]: current.qualifying.resultsByDriver[raceDriverIds[1]] ?? null,
+      },
+    },
+    race: {
+      ...current.race,
+      resultsByDriver: {
+        [raceDriverIds[0]]: current.race.resultsByDriver[raceDriverIds[0]] ?? null,
+        [raceDriverIds[1]]: current.race.resultsByDriver[raceDriverIds[1]] ?? null,
+      },
+    },
+    postRace: {
+      ...current.postRace,
+      resultsByDriver: {
+        [raceDriverIds[0]]: current.postRace.resultsByDriver[raceDriverIds[0]] ?? null,
+        [raceDriverIds[1]]: current.postRace.resultsByDriver[raceDriverIds[1]] ?? null,
+      },
+    },
+  };
+}
+
 export function useGameState() {
   const [weekend, setWeekend] = useState<AppWeekendState>(() => createInitialWeekend());
   const [seasonState, setSeasonState] = useState<SeasonState>(() =>
@@ -106,9 +171,12 @@ export function useGameState() {
     const savedState = loadGameState();
 
     if (savedState && !hasInitializedFromStorage.current) {
-      setWeekend(savedState.weekend as AppWeekendState);
+      const loadedTeam = normalizeLoadedTeam(savedState.team);
+      setWeekend(
+        syncWeekendRaceDrivers(savedState.weekend as AppWeekendState, loadedTeam.raceDriverIds)
+      );
       setSeasonState(savedState.seasonState);
-      setTeam(savedState.team ?? createStarterAppTeam());
+      setTeam(loadedTeam);
       hasInitializedFromStorage.current = true;
     } else if (!hasInitializedFromStorage.current) {
       hasInitializedFromStorage.current = true;
@@ -177,6 +245,9 @@ export function useGameState() {
     [team]
   );
 
+  const raceDrivers = useMemo(() => getRaceDrivers(team), [team]);
+  const reserveDrivers = useMemo(() => getReserveDrivers(team), [team]);
+
   const summary = useMemo(() => {
     return {
       devMode: DEV_WEEKEND_MODE,
@@ -186,6 +257,8 @@ export function useGameState() {
       countdownMs: sessionInfo.countdownMs,
       permissions: sessionInfo.permissions,
       team,
+      raceDrivers,
+      reserveDrivers,
       derivedCarStats,
       upgradesOverview,
       driverRecoveryOverview,
@@ -209,6 +282,8 @@ export function useGameState() {
     weekend,
     seasonState,
     team,
+    raceDrivers,
+    reserveDrivers,
     derivedCarStats,
     upgradesOverview,
     driverRecoveryOverview,
@@ -421,7 +496,7 @@ export function useGameState() {
       return;
     }
 
-    setWeekend(result.nextWeekend as AppWeekendState);
+    setWeekend(syncWeekendRaceDrivers(result.nextWeekend as AppWeekendState, team.raceDriverIds));
     setNowMs(Date.now());
   }
 
@@ -429,8 +504,16 @@ export function useGameState() {
     setTeam((currentTeam) => upgradeTeamPart(currentTeam, partKey));
   }
 
-  function handleSetActiveDriver(driverId: string) {
-    setTeam((currentTeam) => setActiveTeamDriver(currentTeam, driverId));
+  function handleSetRaceSeatDriver(seatIndex: 0 | 1, driverId: string) {
+    setTeam((currentTeam) => {
+      const nextTeam = setRaceSeatDriver(currentTeam, seatIndex, driverId);
+
+      setWeekend((currentWeekend) =>
+        syncWeekendRaceDrivers(currentWeekend as AppWeekendState, nextTeam.raceDriverIds)
+      );
+
+      return nextTeam;
+    });
   }
 
   function handleRecoverDriverFitness(driverId: string) {
@@ -444,7 +527,7 @@ export function useGameState() {
   function handleResetWeekend() {
     const fresh = createFreshGameState();
     clearGameState();
-    setWeekend(fresh.weekend);
+    setWeekend(syncWeekendRaceDrivers(fresh.weekend, fresh.team.raceDriverIds));
     setSeasonState(fresh.seasonState);
     setTeam(fresh.team);
     setNowMs(Date.now());
@@ -454,6 +537,8 @@ export function useGameState() {
     weekend,
     seasonState,
     team,
+    raceDrivers,
+    reserveDrivers,
     derivedCarStats,
     upgradesOverview,
     driverRecoveryOverview,
@@ -470,7 +555,7 @@ export function useGameState() {
     handleApplyPostRace,
     handleAdvanceToNextWeekend,
     handleUpgradePart,
-    handleSetActiveDriver,
+    handleSetRaceSeatDriver,
     handleRecoverDriverFitness,
     handleRecoverDriverMorale,
     handleResetWeekend,

@@ -11,11 +11,6 @@ import type {
   WeekendTyreCompoundId,
 } from "@/types/weekendQualifying";
 
-const DRIVER_NAMES: Record<string, string> = {
-  "driver-1": "Driver 1",
-  "driver-2": "Driver 2",
-};
-
 const SLOT_OPTIONS = [1, 2, 3] as const;
 const STOP_OPTIONS = [0, 1, 2, 3] as const;
 
@@ -36,10 +31,6 @@ const COMPOUND_OPTIONS: readonly WeekendTyreCompoundId[] = [
   "intermediate",
   "full-wet",
 ];
-
-function getDriverName(driverId: string): string {
-  return DRIVER_NAMES[driverId] ?? driverId;
-}
 
 function getPillClassName(isActive: boolean, isDisabled: boolean): string {
   return [
@@ -71,6 +62,8 @@ export default function ManagementPage() {
   const {
     weekend,
     team,
+    raceDrivers,
+    reserveDrivers,
     isMounted,
     sessionInfo,
     handleSetTraining,
@@ -88,20 +81,20 @@ export default function ManagementPage() {
                 Management Center
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-                Driver Setup & Strategy
+                Race Driver Setup
               </h1>
               <p className="mt-2 text-sm text-neutral-400">
-                Hier beheer je per coureur trainingfocus en race strategy zonder de volledige weekendflow pagina nodig te hebben.
+                Alleen de huidige race lineup wordt hier ingesteld. Reserves beheer je via Recovery / Rotation.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
               <Link href="/" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Back to Dashboard</Link>
-              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Team Page</Link>
-              <Link href="/upgrades" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Upgrades</Link>
-              <Link href="/weekend" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Weekend Center</Link>
-              <Link href="/results" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Results</Link>
-              <Link href="/standings" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Standings</Link>
+              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Team</Link>
+              <Link href="/upgrades" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Upgrades</Link>
+              <Link href="/recovery" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Recovery</Link>
+              <Link href="/weekend" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Weekend</Link>
+              <Link href="/results" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Results</Link>
               <button
                 type="button"
                 onClick={handleResetWeekend}
@@ -113,7 +106,7 @@ export default function ManagementPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-5">
+        <section className="grid gap-4 md:grid-cols-6">
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
             <p className="text-xs uppercase tracking-wide text-neutral-500">Current Session</p>
             <p className="mt-2 text-sm text-white">{formatSessionLabel(sessionInfo.currentSession)}</p>
@@ -138,10 +131,45 @@ export default function ManagementPage() {
             <p className="text-xs uppercase tracking-wide text-neutral-500">Credits</p>
             <p className="mt-2 text-sm text-white">{team.credits}</p>
           </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Reserves Available</p>
+            <p className="mt-2 text-sm text-white">{reserveDrivers.length}</p>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+          <p className="text-sm font-semibold text-white">Current Race Line-up</p>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {raceDrivers.map((driver, index) => (
+              <div
+                key={driver.id}
+                className="rounded-2xl border border-neutral-800 bg-black p-4"
+              >
+                <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                <p className="mt-1 text-sm font-semibold text-white">{driver.name}</p>
+                <p className="mt-2 text-sm text-neutral-300">
+                  Fitness <span className="text-white">{driver.fitness}</span> · Morale{" "}
+                  <span className="text-white">{driver.morale}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <Link
+              href="/recovery"
+              className="inline-flex rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:border-neutral-500"
+            >
+              Open Recovery / Rotation
+            </Link>
+          </div>
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
-          {weekend.driverIds.map((driverId) => {
+          {weekend.driverIds.map((driverId, index) => {
+            const driverInfo = raceDrivers.find((driver) => driver.id === driverId);
             const setup = weekend.driverSetups[driverId];
             const training =
               setup?.trainingPlan ?? {
@@ -165,13 +193,20 @@ export default function ManagementPage() {
               <section key={driverId} className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-lg font-semibold text-white">{getDriverName(driverId)}</p>
-                    <p className="mt-1 text-sm text-neutral-400">Configure pre-session management for this driver.</p>
+                    <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                    <p className="mt-1 text-lg font-semibold text-white">
+                      {driverInfo?.name ?? driverId}
+                    </p>
+                    <p className="mt-1 text-sm text-neutral-400">
+                      Current race driver setup.
+                    </p>
                   </div>
 
                   <div className="rounded-xl border border-neutral-800 bg-black px-3 py-2 text-right">
-                    <p className="text-xs uppercase tracking-wide text-neutral-500">Current Strategy</p>
-                    <p className="mt-1 text-sm text-white">{formatRaceStrategyLabel(raceStrategy)}</p>
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Condition</p>
+                    <p className="mt-1 text-sm text-white">
+                      F {driverInfo?.fitness ?? "—"} · M {driverInfo?.morale ?? "—"}
+                    </p>
                   </div>
                 </div>
 
@@ -301,25 +336,25 @@ export default function ManagementPage() {
                     </div>
 
                     <div className="mt-4 flex flex-col gap-4">
-                      {raceStrategy.stints.map((compound, index) => {
-                        const stintForecast = forecast.stints[index];
+                      {raceStrategy.stints.map((compound, stintIndex) => {
+                        const stintForecast = forecast.stints[stintIndex];
 
                         return (
-                          <div key={`${driverId}-stint-${index}`} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
-                            <p className="mb-2 text-sm font-medium text-white">Stint {index + 1}</p>
+                          <div key={`${driverId}-stint-${stintIndex}`} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                            <p className="mb-2 text-sm font-medium text-white">Stint {stintIndex + 1}</p>
 
                             <div className="flex flex-wrap gap-2">
                               {COMPOUND_OPTIONS.map((option) => {
                                 const isActive = compound === option;
                                 return (
                                   <button
-                                    key={`${driverId}-${index}-${option}`}
+                                    key={`${driverId}-${stintIndex}-${option}`}
                                     type="button"
                                     disabled={!sessionInfo.permissions.canEditStrategy}
                                     className={getPillClassName(isActive, !sessionInfo.permissions.canEditStrategy)}
                                     onClick={() => {
                                       const nextStints = [...raceStrategy.stints];
-                                      nextStints[index] = option;
+                                      nextStints[stintIndex] = option;
                                       handleSetStrategy(driverId, {
                                         ...raceStrategy,
                                         stints: nextStints,

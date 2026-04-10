@@ -41,7 +41,8 @@ export interface AppTeamState {
   color: string;
   sponsor: string;
   credits: number;
-  activeDriverId: string;
+  raceDriverIds: [string, string];
+  reserveDriverIds: string[];
   drivers: AppDriverState[];
   parts: Record<TeamPartKey, number>;
 }

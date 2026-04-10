@@ -1,10 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  TEAM_PART_LABELS,
-  getDerivedCarStats,
-} from "@/lib/playerTeam";
+import { TEAM_PART_LABELS } from "@/lib/playerTeam";
 import { formatCountdown, formatSessionLabel } from "@/lib/weekendSession";
 import { useGameState } from "@/hooks/useGameState";
 
@@ -43,11 +40,11 @@ export default function UpgradesPage() {
 
             <div className="flex flex-wrap gap-3">
               <Link href="/" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Back to Dashboard</Link>
-              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Team Page</Link>
-              <Link href="/management" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Management</Link>
-              <Link href="/weekend" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Weekend Center</Link>
-              <Link href="/results" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Results</Link>
-              <Link href="/standings" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Open Standings</Link>
+              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Team</Link>
+              <Link href="/recovery" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Recovery</Link>
+              <Link href="/management" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Management</Link>
+              <Link href="/weekend" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Weekend</Link>
+              <Link href="/results" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Results</Link>
               <button
                 type="button"
                 onClick={handleResetWeekend}
@@ -82,7 +79,9 @@ export default function UpgradesPage() {
 
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
             <p className="text-xs uppercase tracking-wide text-neutral-500">Active Driver</p>
-            <p className="mt-2 text-sm text-white">{team.activeDriverId}</p>
+            <p className="mt-2 text-sm text-white">
+              {team.drivers.find((driver) => driver.id === team.activeDriverId)?.name ?? team.activeDriverId}
+            </p>
           </div>
         </section>
 
@@ -90,40 +89,31 @@ export default function UpgradesPage() {
           <p className="text-sm font-semibold text-white">Derived Car Stats</p>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs text-neutral-500">Power</p>
-              <p className="mt-1 text-sm text-white">{derivedCarStats.power}</p>
-            </div>
-
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs text-neutral-500">Acceleration</p>
-              <p className="mt-1 text-sm text-white">{derivedCarStats.acceleration}</p>
-            </div>
-
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs text-neutral-500">Grip</p>
-              <p className="mt-1 text-sm text-white">{derivedCarStats.grip}</p>
-            </div>
-
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs text-neutral-500">Tyre Wear</p>
-              <p className="mt-1 text-sm text-white">{derivedCarStats.tyreWear}</p>
-            </div>
-
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs text-neutral-500">Reliability</p>
-              <p className="mt-1 text-sm text-white">{derivedCarStats.reliability}</p>
-            </div>
-
-            <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-              <p className="text-xs text-neutral-500">Balance</p>
-              <p className="mt-1 text-sm text-white">{derivedCarStats.balance}</p>
-            </div>
+            <div className="rounded-2xl border border-neutral-800 bg-black p-4"><p className="text-xs text-neutral-500">Power</p><p className="mt-1 text-sm text-white">{derivedCarStats.power}</p></div>
+            <div className="rounded-2xl border border-neutral-800 bg-black p-4"><p className="text-xs text-neutral-500">Acceleration</p><p className="mt-1 text-sm text-white">{derivedCarStats.acceleration}</p></div>
+            <div className="rounded-2xl border border-neutral-800 bg-black p-4"><p className="text-xs text-neutral-500">Grip</p><p className="mt-1 text-sm text-white">{derivedCarStats.grip}</p></div>
+            <div className="rounded-2xl border border-neutral-800 bg-black p-4"><p className="text-xs text-neutral-500">Tyre Wear</p><p className="mt-1 text-sm text-white">{derivedCarStats.tyreWear}</p></div>
+            <div className="rounded-2xl border border-neutral-800 bg-black p-4"><p className="text-xs text-neutral-500">Reliability</p><p className="mt-1 text-sm text-white">{derivedCarStats.reliability}</p></div>
+            <div className="rounded-2xl border border-neutral-800 bg-black p-4"><p className="text-xs text-neutral-500">Balance</p><p className="mt-1 text-sm text-white">{derivedCarStats.balance}</p></div>
           </div>
         </section>
 
         <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-          <p className="text-sm font-semibold text-white">Part Upgrades</p>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">Part Upgrades</p>
+              <p className="mt-1 text-sm text-neutral-400">
+                Gebruik de car development laag om je auto stap voor stap te verbeteren.
+              </p>
+            </div>
+
+            <Link
+              href="/team"
+              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
+            >
+              Open Team Overview
+            </Link>
+          </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             {upgradesOverview.map((entry) => (

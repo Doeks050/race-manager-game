@@ -7,10 +7,12 @@ import { useGameState } from "@/hooks/useGameState";
 export default function RecoveryPage() {
   const {
     team,
+    raceDrivers,
+    reserveDrivers,
     driverRecoveryOverview,
     isMounted,
     sessionInfo,
-    handleSetActiveDriver,
+    handleSetRaceSeatDriver,
     handleRecoverDriverFitness,
     handleRecoverDriverMorale,
     handleResetWeekend,
@@ -26,56 +28,20 @@ export default function RecoveryPage() {
                 Driver Recovery
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-                Fitness & Morale Management
+                Fitness, Morale & Rotation
               </h1>
               <p className="mt-2 text-sm text-neutral-400">
-                Beheer herstel tussen weekenden, kies je actieve coureur en besteed credits aan recovery.
+                Herstel drivers en wissel reserve drivers naar seat 1 of seat 2.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <Link
-                href="/"
-                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-              >
-                Back to Dashboard
-              </Link>
-
-              <Link
-                href="/team"
-                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-              >
-                Open Team Page
-              </Link>
-
-              <Link
-                href="/upgrades"
-                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-              >
-                Open Upgrades
-              </Link>
-
-              <Link
-                href="/management"
-                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-              >
-                Open Management
-              </Link>
-
-              <Link
-                href="/weekend"
-                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-              >
-                Open Weekend Center
-              </Link>
-
-              <Link
-                href="/results"
-                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-              >
-                Open Results
-              </Link>
-
+              <Link href="/" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Back to Dashboard</Link>
+              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Team</Link>
+              <Link href="/upgrades" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Upgrades</Link>
+              <Link href="/management" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Management</Link>
+              <Link href="/weekend" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Weekend</Link>
+              <Link href="/results" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Results</Link>
               <button
                 type="button"
                 onClick={handleResetWeekend}
@@ -94,10 +60,8 @@ export default function RecoveryPage() {
           </div>
 
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-            <p className="text-xs uppercase tracking-wide text-neutral-500">Active Driver</p>
-            <p className="mt-2 text-sm text-white">
-              {team.drivers.find((driver) => driver.id === team.activeDriverId)?.name ?? team.activeDriverId}
-            </p>
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Race Drivers</p>
+            <p className="mt-2 text-sm text-white">{raceDrivers.length}</p>
           </div>
 
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
@@ -116,6 +80,8 @@ export default function RecoveryPage() {
         <section className="grid gap-6 xl:grid-cols-2">
           {team.drivers.map((driver) => {
             const recovery = driverRecoveryOverview.find((entry) => entry.driverId === driver.id);
+            const raceSeatIndex = team.raceDriverIds.findIndex((id) => id === driver.id);
+            const isRaceDriver = raceSeatIndex !== -1;
 
             return (
               <section
@@ -126,14 +92,14 @@ export default function RecoveryPage() {
                   <div>
                     <p className="text-lg font-semibold text-white">{driver.name}</p>
                     <p className="mt-1 text-sm text-neutral-400">
-                      Recovery and driver selection controls.
+                      Recovery en lineup controls.
                     </p>
                   </div>
 
                   <div className="rounded-xl border border-neutral-800 bg-black px-3 py-2 text-right">
                     <p className="text-xs uppercase tracking-wide text-neutral-500">Role</p>
                     <p className="mt-1 text-sm text-white">
-                      {team.activeDriverId === driver.id ? "Active" : "Reserve"}
+                      {isRaceDriver ? `Race Driver ${raceSeatIndex + 1}` : "Reserve Driver"}
                     </p>
                   </div>
                 </div>
@@ -168,18 +134,25 @@ export default function RecoveryPage() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => handleSetActiveDriver(driver.id)}
-                    className={[
-                      "rounded-2xl px-4 py-3 text-sm font-semibold transition",
-                      team.activeDriverId === driver.id
-                        ? "border border-white bg-white text-black"
-                        : "border border-neutral-700 bg-neutral-900 text-white hover:border-neutral-500",
-                    ].join(" ")}
-                  >
-                    {team.activeDriverId === driver.id ? "Active Driver" : "Set Active"}
-                  </button>
+                  {!isRaceDriver && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleSetRaceSeatDriver(0, driver.id)}
+                        className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:border-neutral-500"
+                      >
+                        Put in Seat 1
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSetRaceSeatDriver(1, driver.id)}
+                        className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:border-neutral-500"
+                      >
+                        Put in Seat 2
+                      </button>
+                    </>
+                  )}
 
                   <button
                     type="button"
@@ -212,6 +185,31 @@ export default function RecoveryPage() {
               </section>
             );
           })}
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-2">
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-sm font-semibold text-white">Current Race Line-up</p>
+            <div className="mt-4 grid gap-3">
+              {raceDrivers.map((driver, index) => (
+                <div key={driver.id} className="rounded-2xl border border-neutral-800 bg-black p-4">
+                  <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{driver.name}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+            <p className="text-sm font-semibold text-white">Reserve Bench</p>
+            <div className="mt-4 grid gap-3">
+              {reserveDrivers.map((driver) => (
+                <div key={driver.id} className="rounded-2xl border border-neutral-800 bg-black p-4">
+                  <p className="text-sm font-semibold text-white">{driver.name}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
       </div>
     </main>
