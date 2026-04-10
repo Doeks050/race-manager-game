@@ -1,45 +1,38 @@
 import {
-  createEmptyWeekendTyreAllocationMap,
   createWeekendTyreAllocation,
+  ensureTyreAllocationForEvent,
   getTyreAllocationForEvent,
-  hasTyreAllocationForEvent,
-  removeTyreAllocationForEvent,
-  setTyreAllocationForEvent,
-} from "./tyreAllocation";
+  replaceTyreAllocationForEvent,
+} from "@/lib/tyreAllocation"
 import type {
   WeekendTyreAllocation,
   WeekendTyreAllocationMap,
   WeekendTyreAllocationTemplate,
-} from "../types/tyreAllocation";
+} from "@/types/tyreAllocation"
 
 export interface TyreAllocationStateContainer {
-  tyreAllocationsByEventId?: WeekendTyreAllocationMap;
+  tyreAllocationsByEventId?: WeekendTyreAllocationMap
 }
 
 export function getTyreAllocationMapFromState(
   state: TyreAllocationStateContainer | undefined | null
 ): WeekendTyreAllocationMap {
-  if (!state?.tyreAllocationsByEventId) {
-    return createEmptyWeekendTyreAllocationMap();
-  }
-
-  return state.tyreAllocationsByEventId;
+  return state?.tyreAllocationsByEventId ?? {}
 }
 
 export function getTyreAllocationFromState(
   state: TyreAllocationStateContainer | undefined | null,
   eventId: string
-): WeekendTyreAllocation | undefined {
-  const allocationMap = getTyreAllocationMapFromState(state);
-  return getTyreAllocationForEvent(allocationMap, eventId);
+): WeekendTyreAllocation | null {
+  const allocationMap = getTyreAllocationMapFromState(state)
+  return getTyreAllocationForEvent(allocationMap, eventId)
 }
 
 export function hasTyreAllocationInState(
   state: TyreAllocationStateContainer | undefined | null,
   eventId: string
 ): boolean {
-  const allocationMap = getTyreAllocationMapFromState(state);
-  return hasTyreAllocationForEvent(allocationMap, eventId);
+  return getTyreAllocationFromState(state, eventId) !== null
 }
 
 export function ensureTyreAllocationInState<T extends TyreAllocationStateContainer>(
@@ -47,48 +40,39 @@ export function ensureTyreAllocationInState<T extends TyreAllocationStateContain
   eventId: string,
   template?: WeekendTyreAllocationTemplate
 ): T & { tyreAllocationsByEventId: WeekendTyreAllocationMap } {
-  const currentMap = getTyreAllocationMapFromState(state);
-
-  if (hasTyreAllocationForEvent(currentMap, eventId)) {
-    return {
-      ...state,
-      tyreAllocationsByEventId: currentMap,
-    };
-  }
-
-  const newAllocation = createWeekendTyreAllocation(eventId, template);
-  const nextMap = setTyreAllocationForEvent(currentMap, newAllocation);
+  const currentMap = getTyreAllocationMapFromState(state)
 
   return {
     ...state,
-    tyreAllocationsByEventId: nextMap,
-  };
+    tyreAllocationsByEventId: ensureTyreAllocationForEvent(currentMap, eventId, template),
+  }
 }
 
 export function replaceTyreAllocationInState<T extends TyreAllocationStateContainer>(
   state: T,
   allocation: WeekendTyreAllocation
 ): T & { tyreAllocationsByEventId: WeekendTyreAllocationMap } {
-  const currentMap = getTyreAllocationMapFromState(state);
-  const nextMap = setTyreAllocationForEvent(currentMap, allocation);
+  const currentMap = getTyreAllocationMapFromState(state)
 
   return {
     ...state,
-    tyreAllocationsByEventId: nextMap,
-  };
+    tyreAllocationsByEventId: replaceTyreAllocationForEvent(currentMap, allocation),
+  }
 }
 
 export function removeTyreAllocationFromState<T extends TyreAllocationStateContainer>(
   state: T,
   eventId: string
 ): T & { tyreAllocationsByEventId: WeekendTyreAllocationMap } {
-  const currentMap = getTyreAllocationMapFromState(state);
-  const nextMap = removeTyreAllocationForEvent(currentMap, eventId);
+  const currentMap = getTyreAllocationMapFromState(state)
+  const nextMap: WeekendTyreAllocationMap = { ...currentMap }
+
+  delete nextMap[eventId]
 
   return {
     ...state,
     tyreAllocationsByEventId: nextMap,
-  };
+  }
 }
 
 export function ensureTyreAllocationsForEventIds<T extends TyreAllocationStateContainer>(
@@ -96,34 +80,47 @@ export function ensureTyreAllocationsForEventIds<T extends TyreAllocationStateCo
   eventIds: string[],
   template?: WeekendTyreAllocationTemplate
 ): T & { tyreAllocationsByEventId: WeekendTyreAllocationMap } {
-  let nextState: T & { tyreAllocationsByEventId: WeekendTyreAllocationMap } = {
-    ...state,
-    tyreAllocationsByEventId: getTyreAllocationMapFromState(state),
-  };
+  let nextMap = getTyreAllocationMapFromState(state)
 
   for (const eventId of eventIds) {
-    nextState = ensureTyreAllocationInState(nextState, eventId, template);
+    nextMap = ensureTyreAllocationForEvent(nextMap, eventId, template)
   }
 
-  return nextState;
+  return {
+    ...state,
+    tyreAllocationsByEventId: nextMap,
+  }
 }
 
 export function pruneTyreAllocationsToEventIds<T extends TyreAllocationStateContainer>(
   state: T,
   allowedEventIds: string[]
 ): T & { tyreAllocationsByEventId: WeekendTyreAllocationMap } {
-  const allowed = new Set(allowedEventIds);
-  const currentMap = getTyreAllocationMapFromState(state);
-  const nextMap: WeekendTyreAllocationMap = {};
+  const allowed = new Set(allowedEventIds)
+  const currentMap = getTyreAllocationMapFromState(state)
+  const nextMap: WeekendTyreAllocationMap = {}
 
   for (const [eventId, allocation] of Object.entries(currentMap)) {
     if (allowed.has(eventId)) {
-      nextMap[eventId] = allocation;
+      nextMap[eventId] = allocation
     }
   }
 
   return {
     ...state,
     tyreAllocationsByEventId: nextMap,
-  };
+  }
+}
+
+export function createTyreAllocationStateForEvent(
+  eventId: string,
+  template?: WeekendTyreAllocationTemplate
+): { tyreAllocationsByEventId: WeekendTyreAllocationMap } {
+  const allocation = createWeekendTyreAllocation(eventId, template)
+
+  return {
+    tyreAllocationsByEventId: {
+      [eventId]: allocation,
+    },
+  }
 }

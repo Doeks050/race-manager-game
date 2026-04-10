@@ -1,33 +1,32 @@
-import { DEFAULT_WEEKEND_TYRE_ALLOCATION } from "../data/tyreAllocation";
+import { DEFAULT_WEEKEND_TYRE_ALLOCATION_TEMPLATE } from "@/data/tyreAllocation"
+import { tyreCompounds } from "@/data/tyres"
 import type {
   WeekendTyreAllocation,
   WeekendTyreAllocationMap,
+  WeekendTyreAllocationSummaryRow,
   WeekendTyreAllocationTemplate,
-  WeekendTyreCompound,
-  WeekendTyreSessionType,
   WeekendTyreSet,
-} from "../types/tyreAllocation";
+} from "@/types/tyreAllocation"
+import type { TyreType } from "@/types/tyre"
 
-function buildTyreSetId(
-  eventId: string,
-  compound: WeekendTyreCompound,
-  index: number
-): string {
-  return `${eventId}-${compound}-${index + 1}`;
+const tyreCompoundNameById: Record<TyreType, string> = tyreCompounds.reduce(
+  (accumulator, compound) => {
+    accumulator[compound.id] = compound.name
+    return accumulator
+  },
+  {} as Record<TyreType, string>
+)
+
+function buildTyreSetId(eventId: string, compound: TyreType, index: number): string {
+  return `${eventId}-${compound}-${index + 1}`
 }
 
-function buildTyreSetLabel(
-  compound: WeekendTyreCompound,
-  index: number
-): string {
-  return `${compound} #${index + 1}`;
+function buildTyreSetLabel(compound: TyreType, index: number): string {
+  const compoundName = tyreCompoundNameById[compound] ?? compound
+  return `${compoundName} #${index + 1}`
 }
 
-function buildTyreSet(
-  eventId: string,
-  compound: WeekendTyreCompound,
-  index: number
-): WeekendTyreSet {
+function buildTyreSet(eventId: string, compound: TyreType, index: number): WeekendTyreSet {
   return {
     id: buildTyreSetId(eventId, compound, index),
     compound,
@@ -35,220 +34,195 @@ function buildTyreSet(
     wear: 0,
     status: "available",
     usedInSessions: [],
-  };
+  }
 }
 
 export function createWeekendTyreAllocation(
   eventId: string,
-  template: WeekendTyreAllocationTemplate = DEFAULT_WEEKEND_TYRE_ALLOCATION
+  template: WeekendTyreAllocationTemplate = DEFAULT_WEEKEND_TYRE_ALLOCATION_TEMPLATE
 ): WeekendTyreAllocation {
-  const sets: WeekendTyreSet[] = [];
+  const sets: WeekendTyreSet[] = []
 
   for (const entry of template.dry) {
     for (let index = 0; index < entry.count; index += 1) {
-      sets.push(buildTyreSet(eventId, entry.compound, index));
+      sets.push(buildTyreSet(eventId, entry.compound, index))
     }
   }
 
   for (const entry of template.wet) {
     for (let index = 0; index < entry.count; index += 1) {
-      sets.push(buildTyreSet(eventId, entry.compound, index));
+      sets.push(buildTyreSet(eventId, entry.compound, index))
     }
   }
 
   return {
     eventId,
     sets,
-  };
+  }
 }
 
-export function createEmptyWeekendTyreAllocationMap(): WeekendTyreAllocationMap {
-  return {};
+export function createTyreAllocationMapForWeekend(weekend: { id: string }): WeekendTyreAllocationMap {
+  return {
+    [weekend.id]: createWeekendTyreAllocation(weekend.id),
+  }
 }
 
-export function getAllTyreSets(
-  allocation: WeekendTyreAllocation
-): WeekendTyreSet[] {
-  return allocation.sets;
-}
-
-export function getTyreSetsByCompound(
-  allocation: WeekendTyreAllocation,
-  compound: WeekendTyreCompound
-): WeekendTyreSet[] {
-  return allocation.sets.filter((set) => set.compound === compound);
-}
-
-export function getAvailableTyreSets(
-  allocation: WeekendTyreAllocation
-): WeekendTyreSet[] {
-  return allocation.sets.filter((set) => set.status === "available");
-}
-
-export function getAvailableTyreSetsByCompound(
-  allocation: WeekendTyreAllocation,
-  compound: WeekendTyreCompound
-): WeekendTyreSet[] {
-  return allocation.sets.filter(
-    (set) => set.compound === compound && set.status === "available"
-  );
-}
-
-export function getAvailableTyreSetCount(
-  allocation: WeekendTyreAllocation,
-  compound: WeekendTyreCompound
-): number {
-  return getAvailableTyreSetsByCompound(allocation, compound).length;
-}
-
-export function findTyreSetById(
-  allocation: WeekendTyreAllocation,
-  setId: string
-): WeekendTyreSet | undefined {
-  return allocation.sets.find((set) => set.id === setId);
-}
-
-export function hasTyreAllocationForEvent(
+export function ensureTyreAllocationForEvent(
   allocationMap: WeekendTyreAllocationMap,
-  eventId: string
-): boolean {
-  return Boolean(allocationMap[eventId]);
+  eventId: string,
+  template: WeekendTyreAllocationTemplate = DEFAULT_WEEKEND_TYRE_ALLOCATION_TEMPLATE
+): WeekendTyreAllocationMap {
+  if (allocationMap[eventId]) {
+    return allocationMap
+  }
+
+  return {
+    ...allocationMap,
+    [eventId]: createWeekendTyreAllocation(eventId, template),
+  }
 }
 
 export function getTyreAllocationForEvent(
   allocationMap: WeekendTyreAllocationMap,
   eventId: string
-): WeekendTyreAllocation | undefined {
-  return allocationMap[eventId];
+): WeekendTyreAllocation | null {
+  return allocationMap[eventId] ?? null
 }
 
-export function setTyreAllocationForEvent(
+export function replaceTyreAllocationForEvent(
   allocationMap: WeekendTyreAllocationMap,
   allocation: WeekendTyreAllocation
 ): WeekendTyreAllocationMap {
   return {
     ...allocationMap,
     [allocation.eventId]: allocation,
-  };
+  }
 }
 
-export function removeTyreAllocationForEvent(
-  allocationMap: WeekendTyreAllocationMap,
-  eventId: string
-): WeekendTyreAllocationMap {
-  const nextMap: WeekendTyreAllocationMap = { ...allocationMap };
-  delete nextMap[eventId];
-  return nextMap;
+export function getTyreSetsByCompound(
+  allocation: WeekendTyreAllocation,
+  compound: TyreType
+): WeekendTyreSet[] {
+  return allocation.sets.filter((set) => set.compound === compound)
+}
+
+export function getAvailableTyreSetCount(
+  allocation: WeekendTyreAllocation,
+  compound: TyreType
+): number {
+  return allocation.sets.filter(
+    (set) => set.compound === compound && set.status === "available"
+  ).length
 }
 
 export function markTyreSetUsed(
   allocation: WeekendTyreAllocation,
   setId: string,
-  sessionType: WeekendTyreSessionType,
+  sessionType: "practice" | "qualifying" | "race",
   addedWear: number
 ): WeekendTyreAllocation {
   return {
     ...allocation,
     sets: allocation.sets.map((set) => {
       if (set.id !== setId) {
-        return set;
+        return set
       }
 
-      const nextWear = Math.max(0, Math.min(100, set.wear + addedWear));
-      const alreadyUsedInSession = set.usedInSessions.includes(sessionType);
+      const alreadyUsedInSession = set.usedInSessions.includes(sessionType)
 
       return {
         ...set,
-        wear: nextWear,
+        wear: Math.max(0, Math.min(100, set.wear + addedWear)),
         status: "used",
         usedInSessions: alreadyUsedInSession
           ? set.usedInSessions
           : [...set.usedInSessions, sessionType],
-      };
+      }
     }),
-  };
+  }
 }
 
 export function markNextAvailableTyreSetUsed(
   allocation: WeekendTyreAllocation,
-  compound: WeekendTyreCompound,
-  sessionType: WeekendTyreSessionType,
+  compound: TyreType,
+  sessionType: "practice" | "qualifying" | "race",
   addedWear: number
 ): { allocation: WeekendTyreAllocation; usedSetId?: string } {
   const nextAvailableSet = allocation.sets.find(
     (set) => set.compound === compound && set.status === "available"
-  );
+  )
 
   if (!nextAvailableSet) {
     return {
       allocation,
       usedSetId: undefined,
-    };
+    }
   }
 
   return {
-    allocation: markTyreSetUsed(
-      allocation,
-      nextAvailableSet.id,
-      sessionType,
-      addedWear
-    ),
+    allocation: markTyreSetUsed(allocation, nextAvailableSet.id, sessionType, addedWear),
     usedSetId: nextAvailableSet.id,
-  };
+  }
 }
 
-export function lockTyreSet(
+export function applyCompoundUsageToAllocation(
   allocation: WeekendTyreAllocation,
-  setId: string
-): WeekendTyreAllocation {
-  return {
-    ...allocation,
-    sets: allocation.sets.map((set) => {
-      if (set.id !== setId) {
-        return set;
-      }
-
-      return {
-        ...set,
-        status: "locked",
-      };
-    }),
-  };
-}
-
-export function unlockTyreSet(
-  allocation: WeekendTyreAllocation,
-  setId: string
-): WeekendTyreAllocation {
-  return {
-    ...allocation,
-    sets: allocation.sets.map((set) => {
-      if (set.id !== setId) {
-        return set;
-      }
-
-      if (set.status !== "locked") {
-        return set;
-      }
-
-      return {
-        ...set,
-        status: "available",
-      };
-    }),
-  };
-}
-
-export function resetTyreAllocationWear(
+  compound: TyreType,
+  sessionType: "practice" | "qualifying" | "race",
+  wearApplied: number
+): {
   allocation: WeekendTyreAllocation
-): WeekendTyreAllocation {
+  usedSetId?: string
+} {
+  return markNextAvailableTyreSetUsed(allocation, compound, sessionType, wearApplied)
+}
+
+export function applyMultipleCompoundUsageToAllocation(
+  allocation: WeekendTyreAllocation,
+  compounds: TyreType[],
+  sessionType: "practice" | "qualifying" | "race",
+  wearAppliedPerSet: number
+): {
+  allocation: WeekendTyreAllocation
+  usedSetIds: string[]
+} {
+  let nextAllocation = allocation
+  const usedSetIds: string[] = []
+
+  for (const compound of compounds) {
+    const result = markNextAvailableTyreSetUsed(
+      nextAllocation,
+      compound,
+      sessionType,
+      wearAppliedPerSet
+    )
+
+    nextAllocation = result.allocation
+
+    if (result.usedSetId) {
+      usedSetIds.push(result.usedSetId)
+    }
+  }
+
   return {
-    ...allocation,
-    sets: allocation.sets.map((set) => ({
-      ...set,
-      wear: 0,
-      status: "available",
-      usedInSessions: [],
-    })),
-  };
+    allocation: nextAllocation,
+    usedSetIds,
+  }
+}
+
+export function summarizeWeekendTyreAllocation(
+  allocation: WeekendTyreAllocation
+): WeekendTyreAllocationSummaryRow[] {
+  return tyreCompounds.map((compound) => {
+    const matchingSets = allocation.sets.filter((set) => set.compound === compound.id)
+
+    return {
+      compound: compound.id,
+      label: compound.name,
+      total: matchingSets.length,
+      available: matchingSets.filter((set) => set.status === "available").length,
+      used: matchingSets.filter((set) => set.status === "used").length,
+      locked: matchingSets.filter((set) => set.status === "locked").length,
+    }
+  })
 }

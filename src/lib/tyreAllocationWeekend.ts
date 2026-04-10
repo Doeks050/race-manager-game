@@ -1,34 +1,97 @@
+import { tyreCompounds } from "@/data/tyres"
 import {
   createWeekendTyreAllocation,
-  getAvailableTyreSetCount,
   getTyreAllocationForEvent,
-  getTyreSetsByCompound,
-  markNextAvailableTyreSetUsed,
-  markTyreSetUsed,
-  setTyreAllocationForEvent,
-} from "./tyreAllocation";
+  replaceTyreAllocationForEvent,
+} from "@/lib/tyreAllocation"
 import {
   ensureTyreAllocationInState,
-  getTyreAllocationMapFromState,
   getTyreAllocationFromState,
+  getTyreAllocationMapFromState,
   replaceTyreAllocationInState,
-} from "./tyreAllocationState";
-import { requireWeekendEventId } from "./weekendEvent";
+} from "@/lib/tyreAllocationState"
+import { requireWeekendEventId } from "@/lib/weekendEvent"
 import type {
   TyreAllocationAvailabilitySummary,
   TyreAllocationStateShape,
   TyreAllocationWeekendSnapshot,
   WeekendSessionTyreUsageEntry,
   WeekendSessionTyreUsageResult,
-} from "../types/tyreAllocationIntegration";
-import type {
-  WeekendTyreAllocation,
-  WeekendTyreAllocationTemplate,
-  WeekendTyreCompound,
-  WeekendTyreSessionType,
-} from "../types/tyreAllocation";
+} from "@/types/tyreAllocationIntegration"
+import type { WeekendTyreAllocation } from "@/types/tyreAllocation"
+import type { TyreType } from "@/types/tyre"
 
-const SUMMARY_COMPOUNDS: WeekendTyreCompound[] = [
+function getTyreLabel(compound: TyreType): string {
+  return tyreCompounds.find((item) => item.id === compound)?.name ?? compound
+}
+
+function getTyreSetsByCompound(
+  allocation: WeekendTyreAllocation,
+  compound: TyreType
+) {
+  return allocation.sets.filter((set) => set.compound === compound)
+}
+
+function getAvailableTyreSetCount(
+  allocation: WeekendTyreAllocation,
+  compound: TyreType
+): number {
+  return allocation.sets.filter(
+    (set) => set.compound === compound && set.status === "available"
+  ).length
+}
+
+function markTyreSetUsed(
+  allocation: WeekendTyreAllocation,
+  setId: string,
+  sessionType: "practice" | "qualifying" | "race",
+  addedWear: number
+): WeekendTyreAllocation {
+  return {
+    ...allocation,
+    sets: allocation.sets.map((set) => {
+      if (set.id !== setId) {
+        return set
+      }
+
+      const alreadyUsedInSession = set.usedInSessions.includes(sessionType)
+
+      return {
+        ...set,
+        wear: Math.max(0, Math.min(100, set.wear + addedWear)),
+        status: "used",
+        usedInSessions: alreadyUsedInSession
+          ? set.usedInSessions
+          : [...set.usedInSessions, sessionType],
+      }
+    }),
+  }
+}
+
+function markNextAvailableTyreSetUsed(
+  allocation: WeekendTyreAllocation,
+  compound: TyreType,
+  sessionType: "practice" | "qualifying" | "race",
+  addedWear: number
+): { allocation: WeekendTyreAllocation; usedSetId?: string } {
+  const nextAvailableSet = allocation.sets.find(
+    (set) => set.compound === compound && set.status === "available"
+  )
+
+  if (!nextAvailableSet) {
+    return {
+      allocation,
+      usedSetId: undefined,
+    }
+  }
+
+  return {
+    allocation: markTyreSetUsed(allocation, nextAvailableSet.id, sessionType, addedWear),
+    usedSetId: nextAvailableSet.id,
+  }
+}
+
+const SUMMARY_COMPOUNDS: TyreType[] = [
   "ultra-soft",
   "super-soft",
   "soft",
@@ -36,25 +99,24 @@ const SUMMARY_COMPOUNDS: WeekendTyreCompound[] = [
   "hard",
   "intermediate",
   "full-wet",
-];
+]
 
 export function ensureCurrentWeekendTyreAllocation<
   T extends TyreAllocationStateShape
 >(
   state: T,
-  weekendContext: unknown,
-  template?: WeekendTyreAllocationTemplate
+  weekendContext: unknown
 ): T & { tyreAllocationsByEventId: Record<string, WeekendTyreAllocation> } {
-  const eventId = requireWeekendEventId(weekendContext);
-  return ensureTyreAllocationInState(state, eventId, template);
+  const eventId = requireWeekendEventId(weekendContext)
+  return ensureTyreAllocationInState(state, eventId)
 }
 
 export function getCurrentWeekendTyreAllocation(
   state: TyreAllocationStateShape,
   weekendContext: unknown
-): WeekendTyreAllocation | undefined {
-  const eventId = requireWeekendEventId(weekendContext);
-  return getTyreAllocationFromState(state, eventId);
+): WeekendTyreAllocation | null {
+  const eventId = requireWeekendEventId(weekendContext)
+  return getTyreAllocationFromState(state, eventId)
 }
 
 export function replaceCurrentWeekendTyreAllocation<
@@ -64,84 +126,82 @@ export function replaceCurrentWeekendTyreAllocation<
   weekendContext: unknown,
   allocation: WeekendTyreAllocation
 ): T & { tyreAllocationsByEventId: Record<string, WeekendTyreAllocation> } {
-  const eventId = requireWeekendEventId(weekendContext);
+  const eventId = requireWeekendEventId(weekendContext)
 
   if (allocation.eventId !== eventId) {
     throw new Error(
       `Tried to replace tyre allocation for event "${eventId}" with allocation for "${allocation.eventId}".`
-    );
+    )
   }
 
-  return replaceTyreAllocationInState(state, allocation);
+  return replaceTyreAllocationInState(state, allocation)
 }
 
 export function buildTyreAllocationAvailabilitySummary(
   allocation: WeekendTyreAllocation
 ): TyreAllocationAvailabilitySummary[] {
   return SUMMARY_COMPOUNDS.map((compound) => {
-    const allSets = getTyreSetsByCompound(allocation, compound);
-    const available = getAvailableTyreSetCount(allocation, compound);
-    const locked = allSets.filter((set) => set.status === "locked").length;
-    const used = allSets.filter((set) => set.status === "used").length;
+    const allSets = getTyreSetsByCompound(allocation, compound)
+    const available = getAvailableTyreSetCount(allocation, compound)
+    const locked = allSets.filter((set) => set.status === "locked").length
+    const used = allSets.filter((set) => set.status === "used").length
 
     return {
       compound,
+      label: getTyreLabel(compound),
       total: allSets.length,
       available,
       locked,
       used,
-    };
-  });
+    }
+  })
 }
 
 export function getCurrentWeekendTyreSnapshot(
   state: TyreAllocationStateShape,
   weekendContext: unknown
-): TyreAllocationWeekendSnapshot | undefined {
-  const allocation = getCurrentWeekendTyreAllocation(state, weekendContext);
+): TyreAllocationWeekendSnapshot | null {
+  const allocation = getCurrentWeekendTyreAllocation(state, weekendContext)
 
   if (!allocation) {
-    return undefined;
+    return null
   }
 
   return {
     eventId: allocation.eventId,
     allocation,
     summary: buildTyreAllocationAvailabilitySummary(allocation),
-  };
+  }
 }
 
 export function applyTyreSetUsageToAllocation(
   allocation: WeekendTyreAllocation,
   setId: string,
-  sessionType: WeekendTyreSessionType,
+  sessionType: "practice" | "qualifying" | "race",
   wearApplied: number
 ): WeekendSessionTyreUsageResult {
-  const nextAllocation = markTyreSetUsed(
-    allocation,
-    setId,
-    sessionType,
-    wearApplied
-  );
+  const nextAllocation = markTyreSetUsed(allocation, setId, sessionType, wearApplied)
+  const usedSet = nextAllocation.sets.find((set) => set.id === setId)
 
   return {
     allocation: nextAllocation,
-    usedSets: [
-      {
-        compound:
-          nextAllocation.sets.find((set) => set.id === setId)?.compound ?? "soft",
-        setId,
-        wearApplied,
-        sessionType,
-      },
-    ],
-  };
+    usedSets: usedSet
+      ? [
+          {
+            compound: usedSet.compound,
+            setId,
+            wearApplied,
+            sessionType,
+          },
+        ]
+      : [],
+  }
 }
 
 export function applyCompoundUsageToAllocation(
   allocation: WeekendTyreAllocation,
-  compound: WeekendTyreCompound,
-  sessionType: WeekendTyreSessionType,
+  compound: TyreType,
+  sessionType: "practice" | "qualifying" | "race",
   wearApplied: number
 ): WeekendSessionTyreUsageResult {
   const result = markNextAvailableTyreSetUsed(
@@ -149,13 +209,13 @@ export function applyCompoundUsageToAllocation(
     compound,
     sessionType,
     wearApplied
-  );
+  )
 
   if (!result.usedSetId) {
     return {
       allocation,
       usedSets: [],
-    };
+    }
   }
 
   return {
@@ -168,17 +228,17 @@ export function applyCompoundUsageToAllocation(
         sessionType,
       },
     ],
-  };
+  }
 }
 
 export function applyMultipleCompoundUsageToAllocation(
   allocation: WeekendTyreAllocation,
-  compounds: WeekendTyreCompound[],
-  sessionType: WeekendTyreSessionType,
+  compounds: TyreType[],
+  sessionType: "practice" | "qualifying" | "race",
   wearAppliedPerSet: number
 ): WeekendSessionTyreUsageResult {
-  let nextAllocation = allocation;
-  const usedSets: WeekendSessionTyreUsageEntry[] = [];
+  let nextAllocation = allocation
+  const usedSets: WeekendSessionTyreUsageEntry[] = []
 
   for (const compound of compounds) {
     const result = markNextAvailableTyreSetUsed(
@@ -186,9 +246,9 @@ export function applyMultipleCompoundUsageToAllocation(
       compound,
       sessionType,
       wearAppliedPerSet
-    );
+    )
 
-    nextAllocation = result.allocation;
+    nextAllocation = result.allocation
 
     if (result.usedSetId) {
       usedSets.push({
@@ -196,14 +256,14 @@ export function applyMultipleCompoundUsageToAllocation(
         setId: result.usedSetId,
         wearApplied: wearAppliedPerSet,
         sessionType,
-      });
+      })
     }
   }
 
   return {
     allocation: nextAllocation,
     usedSets,
-  };
+  }
 }
 
 export function applyCurrentWeekendCompoundUsage<
@@ -211,28 +271,27 @@ export function applyCurrentWeekendCompoundUsage<
 >(
   state: T,
   weekendContext: unknown,
-  compound: WeekendTyreCompound,
-  sessionType: WeekendTyreSessionType,
+  compound: TyreType,
+  sessionType: "practice" | "qualifying" | "race",
   wearApplied: number
 ): {
-  state: T & { tyreAllocationsByEventId: Record<string, WeekendTyreAllocation> };
-  result: WeekendSessionTyreUsageResult;
+  state: T & { tyreAllocationsByEventId: Record<string, WeekendTyreAllocation> }
+  result: WeekendSessionTyreUsageResult
 } {
-  const eventId = requireWeekendEventId(weekendContext);
-  const ensuredState = ensureTyreAllocationInState(state, eventId);
-  const allocationMap = getTyreAllocationMapFromState(ensuredState);
+  const eventId = requireWeekendEventId(weekendContext)
+  const ensuredState = ensureTyreAllocationInState(state, eventId)
+  const allocationMap = getTyreAllocationMapFromState(ensuredState)
   const currentAllocation =
-    getTyreAllocationForEvent(allocationMap, eventId) ??
-    createWeekendTyreAllocation(eventId);
+    getTyreAllocationForEvent(allocationMap, eventId) ?? createWeekendTyreAllocation(eventId)
 
   const result = applyCompoundUsageToAllocation(
     currentAllocation,
     compound,
     sessionType,
     wearApplied
-  );
+  )
 
-  const nextMap = setTyreAllocationForEvent(allocationMap, result.allocation);
+  const nextMap = replaceTyreAllocationForEvent(allocationMap, result.allocation)
 
   return {
     state: {
@@ -240,7 +299,7 @@ export function applyCurrentWeekendCompoundUsage<
       tyreAllocationsByEventId: nextMap,
     },
     result,
-  };
+  }
 }
 
 export function applyCurrentWeekendMultipleCompoundUsage<
@@ -248,28 +307,27 @@ export function applyCurrentWeekendMultipleCompoundUsage<
 >(
   state: T,
   weekendContext: unknown,
-  compounds: WeekendTyreCompound[],
-  sessionType: WeekendTyreSessionType,
+  compounds: TyreType[],
+  sessionType: "practice" | "qualifying" | "race",
   wearAppliedPerSet: number
 ): {
-  state: T & { tyreAllocationsByEventId: Record<string, WeekendTyreAllocation> };
-  result: WeekendSessionTyreUsageResult;
+  state: T & { tyreAllocationsByEventId: Record<string, WeekendTyreAllocation> }
+  result: WeekendSessionTyreUsageResult
 } {
-  const eventId = requireWeekendEventId(weekendContext);
-  const ensuredState = ensureTyreAllocationInState(state, eventId);
-  const allocationMap = getTyreAllocationMapFromState(ensuredState);
+  const eventId = requireWeekendEventId(weekendContext)
+  const ensuredState = ensureTyreAllocationInState(state, eventId)
+  const allocationMap = getTyreAllocationMapFromState(ensuredState)
   const currentAllocation =
-    getTyreAllocationForEvent(allocationMap, eventId) ??
-    createWeekendTyreAllocation(eventId);
+    getTyreAllocationForEvent(allocationMap, eventId) ?? createWeekendTyreAllocation(eventId)
 
   const result = applyMultipleCompoundUsageToAllocation(
     currentAllocation,
     compounds,
     sessionType,
     wearAppliedPerSet
-  );
+  )
 
-  const nextMap = setTyreAllocationForEvent(allocationMap, result.allocation);
+  const nextMap = replaceTyreAllocationForEvent(allocationMap, result.allocation)
 
   return {
     state: {
@@ -277,5 +335,5 @@ export function applyCurrentWeekendMultipleCompoundUsage<
       tyreAllocationsByEventId: nextMap,
     },
     result,
-  };
+  }
 }

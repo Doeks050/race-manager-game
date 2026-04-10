@@ -1,103 +1,139 @@
 "use client";
 
 import Link from "next/link";
+import { buildStrategyForecast } from "@/lib/strategyForecast";
+import { formatRaceStrategyLabel, normalizeRaceStrategy } from "@/lib/raceStrategy";
 import { formatCountdown, formatSessionLabel } from "@/lib/weekendSession";
 import { useGameState } from "@/hooks/useGameState";
+import type {
+  WeekendTrainingSkill,
+  WeekendTrainingTrim,
+  WeekendTyreCompoundId,
+} from "@/types/weekendQualifying";
 
-function formatIsoForDisplay(iso: string): string {
-  return iso.replace("T", " ").replace(".000Z", " UTC");
+const SLOT_OPTIONS = [1, 2, 3] as const;
+const STOP_OPTIONS = [0, 1, 2, 3] as const;
+
+const TRIM_OPTIONS: readonly WeekendTrainingTrim[] = ["race", "quali", "balanced"];
+const SKILL_OPTIONS: readonly WeekendTrainingSkill[] = [
+  "cornering",
+  "straight-line",
+  "consistency",
+  "tyre-management",
+  "pitstop",
+];
+const COMPOUND_OPTIONS: readonly WeekendTyreCompoundId[] = [
+  "ultra-soft",
+  "super-soft",
+  "soft",
+  "medium",
+  "hard",
+  "intermediate",
+  "full-wet",
+];
+
+function getPillClassName(isActive: boolean, isDisabled: boolean): string {
+  return [
+    "rounded-full border px-4 py-2 text-sm font-semibold transition",
+    isDisabled
+      ? "cursor-not-allowed border-neutral-800 bg-neutral-950 text-neutral-600"
+      : isActive
+        ? "border-white bg-white text-black"
+        : "border-neutral-700 bg-neutral-950 text-neutral-200 hover:border-neutral-500 hover:bg-neutral-900",
+  ].join(" ");
 }
 
-export default function HomePage() {
+function getRiskClassName(riskLevel: string): string {
+  switch (riskLevel) {
+    case "low":
+      return "border-emerald-800/60 bg-emerald-950/20 text-emerald-200";
+    case "medium":
+      return "border-yellow-800/60 bg-yellow-950/20 text-yellow-200";
+    case "high":
+      return "border-orange-800/60 bg-orange-950/20 text-orange-200";
+    case "extreme":
+      return "border-red-800/60 bg-red-950/20 text-red-200";
+    default:
+      return "border-neutral-800 bg-neutral-950 text-neutral-200";
+  }
+}
+
+export default function ManagementPage() {
   const {
     weekend,
-    seasonState,
     team,
     raceDrivers,
     reserveDrivers,
     isMounted,
-    hasLoadedSave,
     sessionInfo,
-    canAdvanceToNextWeekend,
+    currentWeekendTyreAllocationSummary,
+    handleSetTraining,
+    handleSetStrategy,
     handleResetWeekend,
   } = useGameState();
+
+  const tyreAvailabilityByCompound = Object.fromEntries(
+    currentWeekendTyreAllocationSummary.map((row) => [row.compound, row.available])
+  ) as Record<WeekendTyreCompoundId, number>;
+
+  const tyreTotalsByCompound = Object.fromEntries(
+    currentWeekendTyreAllocationSummary.map((row) => [row.compound, row.total])
+  ) as Record<WeekendTyreCompoundId, number>;
 
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-6 md:py-8">
-        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-6">
-          <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
-            Race Manager Game
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            Team Dashboard
-          </h1>
-          <p className="mt-3 max-w-4xl text-sm text-neutral-400">
-            Dit is de centrale hub voor jouw managementloop: team, upgrades,
-            recovery, session setup, weekendflow, results en standings.
-          </p>
+        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
+                Management Center
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+                Race Driver Setup
+              </h1>
+              <p className="mt-2 text-sm text-neutral-400">
+                Alleen de huidige race lineup wordt hier ingesteld. Reserves beheer je via Recovery / Rotation.
+              </p>
+            </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Link
-              href="/team"
-              className="rounded-2xl border border-white bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
-            >
-              Team
-            </Link>
-            <Link
-              href="/upgrades"
-              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-            >
-              Upgrades
-            </Link>
-            <Link
-              href="/recovery"
-              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-            >
-              Recovery
-            </Link>
-            <Link
-              href="/management"
-              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-            >
-              Management
-            </Link>
-            <Link
-              href="/weekend"
-              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-            >
-              Weekend
-            </Link>
-            <Link
-              href="/results"
-              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-            >
-              Results
-            </Link>
-            <Link
-              href="/standings"
-              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-            >
-              Standings
-            </Link>
-            <button
-              type="button"
-              onClick={handleResetWeekend}
-              className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-            >
-              Reset Demo Weekend
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Back to Dashboard</Link>
+              <Link href="/team" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Team</Link>
+              <Link href="/upgrades" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Upgrades</Link>
+              <Link href="/recovery" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Recovery</Link>
+              <Link href="/weekend" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Weekend</Link>
+              <Link href="/results" className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500">Results</Link>
+              <button
+                type="button"
+                onClick={handleResetWeekend}
+                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
+              >
+                Reset Demo Weekend
+              </button>
+            </div>
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <section className="grid gap-4 md:grid-cols-6">
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-            <p className="text-xs uppercase tracking-wide text-neutral-500">
-              Save Status
-            </p>
-            <p className="mt-2 text-sm text-white">
-              {hasLoadedSave ? "Local save active" : "Loading save..."}
-            </p>
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Current Session</p>
+            <p className="mt-2 text-sm text-white">{formatSessionLabel(sessionInfo.currentSession)}</p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Countdown</p>
+            <p className="mt-2 text-sm text-white">{formatCountdown(isMounted ? sessionInfo.countdownMs : null)}</p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Training Permission</p>
+            <p className="mt-2 text-sm text-white">{sessionInfo.permissions.canEditTraining ? "Open" : "Locked"}</p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Strategy Permission</p>
+            <p className="mt-2 text-sm text-white">{sessionInfo.permissions.canEditStrategy ? "Open" : "Locked"}</p>
           </div>
 
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
@@ -106,291 +142,324 @@ export default function HomePage() {
           </div>
 
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-            <p className="text-xs uppercase tracking-wide text-neutral-500">
-              Current Session
-            </p>
-            <p className="mt-2 text-sm text-white">
-              {formatSessionLabel(sessionInfo.currentSession)}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-            <p className="text-xs uppercase tracking-wide text-neutral-500">Countdown</p>
-            <p className="mt-2 text-sm text-white">
-              {formatCountdown(isMounted ? sessionInfo.countdownMs : null)}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-            <p className="text-xs uppercase tracking-wide text-neutral-500">
-              Next Weekend Ready
-            </p>
-            <p className="mt-2 text-sm text-white">
-              {canAdvanceToNextWeekend ? "Yes" : "No"}
-            </p>
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Reserves Available</p>
+            <p className="mt-2 text-sm text-white">{reserveDrivers.length}</p>
           </div>
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-2">
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-white">Driver Condition</p>
-                <p className="mt-1 text-sm text-neutral-400">
-                  Race drivers en reserve drivers direct zichtbaar.
-                </p>
-              </div>
-
-              <Link
-                href="/recovery"
-                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-              >
-                Open Recovery
-              </Link>
+        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-white">Weekend Tyre Stock</p>
+              <p className="mt-1 text-sm text-neutral-400">
+                Dit zijn je resterende sets voor het huidige weekend.
+              </p>
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              {team.drivers.map((driver) => {
-                const isRaceDriver = team.raceDriverIds.includes(driver.id);
-                return (
-                  <div
-                    key={driver.id}
-                    className="rounded-2xl border border-neutral-800 bg-black p-4"
-                  >
-                    <p className="text-sm font-semibold text-white">{driver.name}</p>
-                    <div className="mt-3 grid gap-2 text-sm">
-                      <p className="text-neutral-300">
-                        Fitness: <span className="text-white">{driver.fitness}</span>
-                      </p>
-                      <p className="text-neutral-300">
-                        Morale: <span className="text-white">{driver.morale}</span>
-                      </p>
-                      <p className="text-neutral-300">
-                        Experience: <span className="text-white">{driver.experience}</span>
-                      </p>
-                      <p className="text-neutral-300">
-                        Role:{" "}
-                        <span className="text-white">
-                          {isRaceDriver ? "Race Driver" : "Reserve Driver"}
-                        </span>
-                      </p>
+            <div className="rounded-xl border border-neutral-800 bg-black px-3 py-2 text-sm text-neutral-300">
+              {currentWeekendTyreAllocationSummary.reduce((sum, row) => sum + row.available, 0)} sets remaining
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {currentWeekendTyreAllocationSummary.map((row) => (
+              <div
+                key={row.compound}
+                className="rounded-2xl border border-neutral-800 bg-black p-4"
+              >
+                <p className="text-sm font-semibold text-white">{row.label}</p>
+                <p className="mt-2 text-sm text-neutral-300">
+                  Available <span className="text-white">{row.available}</span> / {row.total}
+                </p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Used {row.used} · Locked {row.locked}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+          <p className="text-sm font-semibold text-white">Current Race Line-up</p>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {raceDrivers.map((driver, index) => (
+              <div
+                key={driver.id}
+                className="rounded-2xl border border-neutral-800 bg-black p-4"
+              >
+                <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                <p className="mt-1 text-sm font-semibold text-white">{driver.name}</p>
+                <p className="mt-2 text-sm text-neutral-300">
+                  Fitness <span className="text-white">{driver.fitness}</span> · Morale{" "}
+                  <span className="text-white">{driver.morale}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <Link
+              href="/recovery"
+              className="inline-flex rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:border-neutral-500"
+            >
+              Open Recovery / Rotation
+            </Link>
+          </div>
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-2">
+          {weekend.driverIds.map((driverId, index) => {
+            const driverInfo = raceDrivers.find((driver) => driver.id === driverId);
+            const setup = weekend.driverSetups[driverId];
+            const training =
+              setup?.trainingPlan ?? {
+                slots: 1,
+                trim: "balanced",
+                skill: "consistency",
+                compound: "medium",
+              };
+
+            const raceStrategy = normalizeRaceStrategy(setup?.raceStrategy);
+            const forecast = buildStrategyForecast({
+              teamId: weekend.teamId,
+              driverId,
+              circuitId: weekend.circuitId,
+              weatherId: weekend.weatherId,
+              trainingPlan: training,
+              raceStrategy,
+            });
+
+            return (
+              <section key={driverId} className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-neutral-500">Seat {index + 1}</p>
+                    <p className="mt-1 text-lg font-semibold text-white">
+                      {driverInfo?.name ?? driverId}
+                    </p>
+                    <p className="mt-1 text-sm text-neutral-400">
+                      Current race driver setup.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-800 bg-black px-3 py-2 text-right">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">Condition</p>
+                    <p className="mt-1 text-sm text-white">
+                      F {driverInfo?.fitness ?? "—"} · M {driverInfo?.morale ?? "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-col gap-5">
+                  <div>
+                    <p className="mb-2 text-sm font-medium text-white">Training Slots</p>
+                    <div className="flex flex-wrap gap-2">
+                      {SLOT_OPTIONS.map((slots) => {
+                        const isActive = training.slots === slots;
+                        return (
+                          <button
+                            key={slots}
+                            type="button"
+                            disabled={!sessionInfo.permissions.canEditTraining}
+                            className={getPillClassName(isActive, !sessionInfo.permissions.canEditTraining)}
+                            onClick={() => handleSetTraining(driverId, { ...training, slots })}
+                          >
+                            {slots} slot{slots > 1 ? "s" : ""}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
 
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-white">Current Weekend</p>
-                <p className="mt-1 text-sm text-neutral-400">
-                  Jouw komende sessies en timings op één plek.
-                </p>
-              </div>
+                  <div>
+                    <p className="mb-2 text-sm font-medium text-white">Trim</p>
+                    <div className="flex flex-wrap gap-2">
+                      {TRIM_OPTIONS.map((trim) => {
+                        const isActive = training.trim === trim;
+                        return (
+                          <button
+                            key={trim}
+                            type="button"
+                            disabled={!sessionInfo.permissions.canEditTraining}
+                            className={getPillClassName(isActive, !sessionInfo.permissions.canEditTraining)}
+                            onClick={() => handleSetTraining(driverId, { ...training, trim })}
+                          >
+                            {trim}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-              <Link
-                href="/weekend"
-                className="rounded-2xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-semibold text-white transition hover:border-neutral-500"
-              >
-                Open Weekend
-              </Link>
-            </div>
+                  <div>
+                    <p className="mb-2 text-sm font-medium text-white">Skill Focus</p>
+                    <div className="flex flex-wrap gap-2">
+                      {SKILL_OPTIONS.map((skill) => {
+                        const isActive = training.skill === skill;
+                        return (
+                          <button
+                            key={skill}
+                            type="button"
+                            disabled={!sessionInfo.permissions.canEditTraining}
+                            className={getPillClassName(isActive, !sessionInfo.permissions.canEditTraining)}
+                            onClick={() => handleSetTraining(driverId, { ...training, skill })}
+                          >
+                            {skill}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-            <div className="mt-4 flex flex-col gap-3">
-              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-                <p className="text-xs text-neutral-500">Round</p>
-                <p className="mt-1 text-sm text-white">{weekend.round}</p>
-              </div>
+                  <div>
+                    <p className="mb-2 text-sm font-medium text-white">Compound Focus</p>
+                    <div className="flex flex-wrap gap-2">
+                      {COMPOUND_OPTIONS.map((compound) => {
+                        const isActive = training.compound === compound;
+                        const availableCount = tyreAvailabilityByCompound[compound] ?? 0;
+                        const totalCount = tyreTotalsByCompound[compound] ?? 0;
+                        const isOutOfStock = availableCount <= 0 && !isActive;
+                        const isDisabled =
+                          !sessionInfo.permissions.canEditTraining || isOutOfStock;
 
-              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-                <p className="text-xs text-neutral-500">Circuit</p>
-                <p className="mt-1 text-sm text-white">{weekend.circuitId}</p>
-              </div>
+                        return (
+                          <button
+                            key={compound}
+                            type="button"
+                            disabled={isDisabled}
+                            className={getPillClassName(isActive, isDisabled)}
+                            onClick={() => handleSetTraining(driverId, { ...training, compound })}
+                          >
+                            {compound} ({availableCount}/{totalCount})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-              <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-                <p className="text-xs text-neutral-500">Weather</p>
-                <p className="mt-1 text-sm text-white">{weekend.weatherId}</p>
-              </div>
+                  <div className="rounded-2xl border border-neutral-800 bg-black p-4">
+                    <p className="text-sm font-semibold text-white">Race Strategy Builder</p>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-                  <p className="text-xs text-neutral-500">Practice At</p>
-                  <p className="mt-1 text-xs text-white">
-                    {formatIsoForDisplay(weekend.schedule.practiceAt)}
-                  </p>
+                    <div className="mt-4">
+                      <p className="mb-2 text-sm font-medium text-white">Stops</p>
+                      <div className="flex flex-wrap gap-2">
+                        {STOP_OPTIONS.map((stops) => {
+                          const isActive = raceStrategy.stops === stops;
+                          return (
+                            <button
+                              key={stops}
+                              type="button"
+                              disabled={!sessionInfo.permissions.canEditStrategy}
+                              className={getPillClassName(isActive, !sessionInfo.permissions.canEditStrategy)}
+                              onClick={() =>
+                                handleSetStrategy(driverId, {
+                                  ...raceStrategy,
+                                  stops,
+                                  stints: normalizeRaceStrategy({
+                                    ...raceStrategy,
+                                    stops,
+                                  }).stints,
+                                })
+                              }
+                            >
+                              {stops} stop{stops === 1 ? "" : "s"}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                        <p className="text-xs uppercase tracking-wide text-neutral-500">Race Laps</p>
+                        <p className="mt-1 text-sm text-white">{forecast.raceLaps}</p>
+                      </div>
+
+                      <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                        <p className="text-xs uppercase tracking-wide text-neutral-500">Tyre Stress</p>
+                        <p className="mt-1 text-sm text-white">{forecast.circuitTyreStress}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-4">
+                      {raceStrategy.stints.map((compound, stintIndex) => {
+                        const stintForecast = forecast.stints[stintIndex];
+
+                        return (
+                          <div key={`${driverId}-stint-${stintIndex}`} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                            <p className="mb-2 text-sm font-medium text-white">Stint {stintIndex + 1}</p>
+
+                            <div className="flex flex-wrap gap-2">
+                              {COMPOUND_OPTIONS.map((option) => {
+                                const isActive = compound === option;
+                                const availableCount = tyreAvailabilityByCompound[option] ?? 0;
+                                const totalCount = tyreTotalsByCompound[option] ?? 0;
+                                const isOutOfStock = availableCount <= 0 && !isActive;
+                                const isDisabled =
+                                  !sessionInfo.permissions.canEditStrategy || isOutOfStock;
+
+                                return (
+                                  <button
+                                    key={`${driverId}-${stintIndex}-${option}`}
+                                    type="button"
+                                    disabled={isDisabled}
+                                    className={getPillClassName(isActive, isDisabled)}
+                                    onClick={() => {
+                                      const nextStints = [...raceStrategy.stints];
+                                      nextStints[stintIndex] = option;
+                                      handleSetStrategy(driverId, {
+                                        ...raceStrategy,
+                                        stints: nextStints,
+                                      });
+                                    }}
+                                  >
+                                    {option} ({availableCount}/{totalCount})
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {stintForecast && (
+                              <>
+                                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                  <div className="rounded-xl border border-neutral-800 bg-black p-3">
+                                    <p className="text-xs text-neutral-500">Planned laps</p>
+                                    <p className="mt-1 text-sm text-white">{stintForecast.plannedLaps}</p>
+                                  </div>
+
+                                  <div className="rounded-xl border border-neutral-800 bg-black p-3">
+                                    <p className="text-xs text-neutral-500">Competitive laps</p>
+                                    <p className="mt-1 text-sm text-white">{stintForecast.expectedCompetitiveLaps}</p>
+                                    <p className="mt-1 text-xs text-neutral-500">
+                                      Max expected: {stintForecast.expectedMaxLaps}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className={["mt-3 rounded-xl border p-3 text-sm", getRiskClassName(stintForecast.riskLevel)].join(" ")}>
+                                  <p className="font-semibold">{stintForecast.riskLevel.toUpperCase()} RISK</p>
+                                  <p className="mt-1">{stintForecast.warning}</p>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-800 bg-black p-3 text-sm">
+                    <p className="text-neutral-400">Saved setup:</p>
+                    <p className="mt-1 text-white">
+                      {training.slots} slot(s) · {training.trim} · {training.skill} · {training.compound}
+                    </p>
+                    <p className="mt-1 text-white">{formatRaceStrategyLabel(raceStrategy)}</p>
+                  </div>
                 </div>
-                <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-                  <p className="text-xs text-neutral-500">Qualifying At</p>
-                  <p className="mt-1 text-xs text-white">
-                    {formatIsoForDisplay(weekend.schedule.qualifyingAt)}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-neutral-800 bg-black p-4">
-                  <p className="text-xs text-neutral-500">Race At</p>
-                  <p className="mt-1 text-xs text-white">
-                    {formatIsoForDisplay(weekend.schedule.raceAt)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-            <p className="text-sm font-semibold text-white">Current Race Line-up</p>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {raceDrivers.map((driver, index) => (
-                <div
-                  key={driver.id}
-                  className="rounded-2xl border border-neutral-800 bg-black p-4"
-                >
-                  <p className="text-xs text-neutral-500">Seat {index + 1}</p>
-                  <p className="mt-1 text-sm font-semibold text-white">{driver.name}</p>
-                  <p className="mt-2 text-sm text-neutral-300">
-                    Fitness <span className="text-white">{driver.fitness}</span> · Morale{" "}
-                    <span className="text-white">{driver.morale}</span>
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-            <p className="text-sm font-semibold text-white">Reserve Bench</p>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {reserveDrivers.map((driver) => (
-                <div
-                  key={driver.id}
-                  className="rounded-2xl border border-neutral-800 bg-black p-4"
-                >
-                  <p className="text-sm font-semibold text-white">{driver.name}</p>
-                  <p className="mt-2 text-sm text-neutral-300">
-                    Fitness <span className="text-white">{driver.fitness}</span> · Morale{" "}
-                    <span className="text-white">{driver.morale}</span>
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-4">
-          <Link
-            href="/team"
-            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
-          >
-            <p className="text-sm font-semibold text-white">Team Overview</p>
-            <p className="mt-2 text-sm text-neutral-400">
-              Drivers, parts, car stats en lineup info.
-            </p>
-          </Link>
-
-          <Link
-            href="/upgrades"
-            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
-          >
-            <p className="text-sm font-semibold text-white">Car Development</p>
-            <p className="mt-2 text-sm text-neutral-400">
-              Besteed credits aan parts en bouw je wagen door.
-            </p>
-          </Link>
-
-          <Link
-            href="/recovery"
-            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
-          >
-            <p className="text-sm font-semibold text-white">Driver Recovery</p>
-            <p className="mt-2 text-sm text-neutral-400">
-              Herstel drivers en wissel race seats met reserves.
-            </p>
-          </Link>
-
-          <Link
-            href="/management"
-            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
-          >
-            <p className="text-sm font-semibold text-white">Session Setup</p>
-            <p className="mt-2 text-sm text-neutral-400">
-              Training en race strategy per race driver instellen.
-            </p>
-          </Link>
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-3">
-          <Link
-            href="/weekend"
-            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
-          >
-            <p className="text-sm font-semibold text-white">Weekend Center</p>
-            <p className="mt-2 text-sm text-neutral-400">
-              Run practice, qualifying, race en post-race verwerking.
-            </p>
-          </Link>
-
-          <Link
-            href="/results"
-            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
-          >
-            <p className="text-sm font-semibold text-white">Results Hub</p>
-            <p className="mt-2 text-sm text-neutral-400">
-              Bekijk sessie-uitkomsten, rewards en weekend summary.
-            </p>
-          </Link>
-
-          <Link
-            href="/standings"
-            className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5 transition hover:border-neutral-600"
-          >
-            <p className="text-sm font-semibold text-white">Championship Tables</p>
-            <p className="mt-2 text-sm text-neutral-400">
-              Volledige driver- en teamstandings van het veld.
-            </p>
-          </Link>
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-            <p className="text-sm font-semibold text-white">Top 5 Drivers</p>
-
-            <div className="mt-4 flex flex-col gap-3">
-              {seasonState.driverStandings.slice(0, 5).map((entry, index) => (
-                <div
-                  key={entry.driverId}
-                  className="rounded-2xl border border-neutral-800 bg-black p-4"
-                >
-                  <p className="text-sm font-semibold text-white">
-                    #{index + 1} · {entry.driverName}
-                  </p>
-                  <p className="mt-1 text-sm text-neutral-400">
-                    {entry.teamName} · {entry.points} pts
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
-            <p className="text-sm font-semibold text-white">Top 5 Teams</p>
-
-            <div className="mt-4 flex flex-col gap-3">
-              {seasonState.teamStandings.slice(0, 5).map((entry, index) => (
-                <div
-                  key={entry.teamId}
-                  className="rounded-2xl border border-neutral-800 bg-black p-4"
-                >
-                  <p className="text-sm font-semibold text-white">
-                    #{index + 1} · {entry.teamName}
-                  </p>
-                  <p className="mt-1 text-sm text-neutral-400">
-                    {entry.points} pts · {entry.wins} wins
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+              </section>
+            );
+          })}
         </section>
       </div>
     </main>

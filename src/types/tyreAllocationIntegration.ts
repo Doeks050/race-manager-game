@@ -1,40 +1,40 @@
+import type { TyreType } from "@/types/tyre"
 import type {
   WeekendTyreAllocation,
   WeekendTyreAllocationMap,
-  WeekendTyreCompound,
-  WeekendTyreSessionType,
-} from "./tyreAllocation";
+} from "@/types/tyreAllocation"
 
 export interface TyreAllocationStateShape {
-  tyreAllocationsByEventId?: WeekendTyreAllocationMap;
+  tyreAllocationsByEventId?: WeekendTyreAllocationMap
 }
 
 export interface WeekendEventReference {
-  eventId: string;
+  eventId: string
 }
 
 export interface WeekendSessionTyreUsageEntry {
-  compound: WeekendTyreCompound;
-  setId: string;
-  wearApplied: number;
-  sessionType: WeekendTyreSessionType;
+  compound: TyreType
+  setId: string
+  wearApplied: number
+  sessionType: "practice" | "qualifying" | "race"
 }
 
 export interface WeekendSessionTyreUsageResult {
-  allocation: WeekendTyreAllocation;
-  usedSets: WeekendSessionTyreUsageEntry[];
+  allocation: WeekendTyreAllocation
+  usedSets: WeekendSessionTyreUsageEntry[]
 }
 
 export interface TyreAllocationAvailabilitySummary {
-  compound: WeekendTyreCompound;
-  total: number;
-  available: number;
-  locked: number;
-  used: number;
+  compound: TyreType
+  label: string
+  total: number
+  available: number
+  locked: number
+  used: number
 }
 
 export interface TyreAllocationWeekendSnapshot {
-  eventId: string;
-  allocation: WeekendTyreAllocation;
-  summary: TyreAllocationAvailabilitySummary[];
+  eventId: string
+  allocation: WeekendTyreAllocation
+  summary: TyreAllocationAvailabilitySummary[]
 }
