@@ -32,6 +32,20 @@ const COMPOUND_OPTIONS: readonly WeekendTyreCompoundId[] = [
   "full-wet",
 ];
 
+type CompoundCounts = Record<WeekendTyreCompoundId, number>;
+
+function createEmptyCompoundCounts(): CompoundCounts {
+  return {
+    "ultra-soft": 0,
+    "super-soft": 0,
+    soft: 0,
+    medium: 0,
+    hard: 0,
+    intermediate: 0,
+    "full-wet": 0,
+  };
+}
+
 function getPillClassName(isActive: boolean, isDisabled: boolean): string {
   return [
     "rounded-full border px-4 py-2 text-sm font-semibold transition",
@@ -58,6 +72,69 @@ function getRiskClassName(riskLevel: string): string {
   }
 }
 
+function incrementCompound(counts: CompoundCounts, compound: WeekendTyreCompoundId): CompoundCounts {
+  return {
+    ...counts,
+    [compound]: counts[compound] + 1,
+  };
+}
+
+function countPlannedCompoundUsage(params: {
+  driverIds: string[];
+  driverSetups: Record<
+    string,
+    {
+      driverId: string;
+      trainingPlan: {
+        slots: number;
+        trim: WeekendTrainingTrim;
+        skill: WeekendTrainingSkill;
+        compound: WeekendTyreCompoundId;
+      };
+      raceStrategy: {
+        stops: number;
+        stints: WeekendTyreCompoundId[];
+      };
+    }
+  >;
+  excludeTrainingDriverId?: string;
+  excludeStrategyDriverId?: string;
+  excludeStintIndex?: number;
+}): CompoundCounts {
+  let counts = createEmptyCompoundCounts();
+
+  for (const driverId of params.driverIds) {
+    const setup = params.driverSetups[driverId];
+
+    if (!setup) {
+      continue;
+    }
+
+    if (driverId !== params.excludeTrainingDriverId) {
+      counts = incrementCompound(counts, setup.trainingPlan.compound);
+    }
+
+    setup.raceStrategy.stints.forEach((compound, stintIndex) => {
+      const shouldExclude =
+        driverId === params.excludeStrategyDriverId && stintIndex === params.excludeStintIndex;
+
+      if (!shouldExclude) {
+        counts = incrementCompound(counts, compound);
+      }
+    });
+  }
+
+  return counts;
+}
+
+function getAvailableAfterPlannedUsage(
+  compound: WeekendTyreCompoundId,
+  totalAvailableNow: number,
+  plannedUsage: CompoundCounts
+): number {
+  return Math.max(0, totalAvailableNow - plannedUsage[compound]);
+}
+
 export default function ManagementPage() {
   const {
     weekend,
@@ -66,10 +143,19 @@ export default function ManagementPage() {
     reserveDrivers,
     isMounted,
     sessionInfo,
+    currentWeekendTyreAllocationSummary,
     handleSetTraining,
     handleSetStrategy,
     handleResetWeekend,
   } = useGameState();
+
+  const tyreAvailabilityByCompound = Object.fromEntries(
+    currentWeekendTyreAllocationSummary.map((row) => [row.compound, row.available])
+  ) as Record<WeekendTyreCompoundId, number>;
+
+  const tyreTotalsByCompound = Object.fromEntries(
+    currentWeekendTyreAllocationSummary.map((row) => [row.compound, row.total])
+  ) as Record<WeekendTyreCompoundId, number>;
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -139,6 +225,38 @@ export default function ManagementPage() {
         </section>
 
         <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-white">Weekend Tyre Stock</p>
+              <p className="mt-1 text-sm text-neutral-400">
+                Dit zijn je resterende sets voor het huidige weekend.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-neutral-800 bg-black px-3 py-2 text-sm text-neutral-300">
+              {currentWeekendTyreAllocationSummary.reduce((sum, row) => sum + row.available, 0)} sets remaining
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {currentWeekendTyreAllocationSummary.map((row) => (
+              <div
+                key={row.compound}
+                className="rounded-2xl border border-neutral-800 bg-black p-4"
+              >
+                <p className="text-sm font-semibold text-white">{row.label}</p>
+                <p className="mt-2 text-sm text-neutral-300">
+                  Available <span className="text-white">{row.available}</span> / {row.total}
+                </p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Used {row.used} · Locked {row.locked}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
           <p className="text-sm font-semibold text-white">Current Race Line-up</p>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -176,7 +294,7 @@ export default function ManagementPage() {
                 slots: 1,
                 trim: "balanced",
                 skill: "consistency",
-                compound: "medium",
+                compound: "medium" as WeekendTyreCompoundId,
               };
 
             const raceStrategy = normalizeRaceStrategy(setup?.raceStrategy);
@@ -187,6 +305,12 @@ export default function ManagementPage() {
               weatherId: weekend.weatherId,
               trainingPlan: training,
               raceStrategy,
+            });
+
+            const plannedUsageWithoutThisTraining = countPlannedCompoundUsage({
+              driverIds: weekend.driverIds,
+              driverSetups: weekend.driverSetups,
+              excludeTrainingDriverId: driverId,
             });
 
             return (
@@ -276,19 +400,33 @@ export default function ManagementPage() {
                     <div className="flex flex-wrap gap-2">
                       {COMPOUND_OPTIONS.map((compound) => {
                         const isActive = training.compound === compound;
+                        const availableCount = tyreAvailabilityByCompound[compound] ?? 0;
+                        const totalCount = tyreTotalsByCompound[compound] ?? 0;
+                        const remainingFree = getAvailableAfterPlannedUsage(
+                          compound,
+                          availableCount,
+                          plannedUsageWithoutThisTraining
+                        );
+                        const isOutOfStock = remainingFree <= 0 && !isActive;
+                        const isDisabled =
+                          !sessionInfo.permissions.canEditTraining || isOutOfStock;
+
                         return (
                           <button
                             key={compound}
                             type="button"
-                            disabled={!sessionInfo.permissions.canEditTraining}
-                            className={getPillClassName(isActive, !sessionInfo.permissions.canEditTraining)}
+                            disabled={isDisabled}
+                            className={getPillClassName(isActive, isDisabled)}
                             onClick={() => handleSetTraining(driverId, { ...training, compound })}
                           >
-                            {compound}
+                            {compound} ({remainingFree}/{totalCount})
                           </button>
                         );
                       })}
                     </div>
+                    <p className="mt-2 text-xs text-neutral-500">
+                      Getoonde aantallen houden rekening met andere geplande training- en racesets.
+                    </p>
                   </div>
 
                   <div className="rounded-2xl border border-neutral-800 bg-black p-4">
@@ -338,6 +476,12 @@ export default function ManagementPage() {
                     <div className="mt-4 flex flex-col gap-4">
                       {raceStrategy.stints.map((compound, stintIndex) => {
                         const stintForecast = forecast.stints[stintIndex];
+                        const plannedUsageWithoutThisStint = countPlannedCompoundUsage({
+                          driverIds: weekend.driverIds,
+                          driverSetups: weekend.driverSetups,
+                          excludeStrategyDriverId: driverId,
+                          excludeStintIndex: stintIndex,
+                        });
 
                         return (
                           <div key={`${driverId}-stint-${stintIndex}`} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
@@ -346,12 +490,23 @@ export default function ManagementPage() {
                             <div className="flex flex-wrap gap-2">
                               {COMPOUND_OPTIONS.map((option) => {
                                 const isActive = compound === option;
+                                const availableCount = tyreAvailabilityByCompound[option] ?? 0;
+                                const totalCount = tyreTotalsByCompound[option] ?? 0;
+                                const remainingFree = getAvailableAfterPlannedUsage(
+                                  option,
+                                  availableCount,
+                                  plannedUsageWithoutThisStint
+                                );
+                                const isOutOfStock = remainingFree <= 0 && !isActive;
+                                const isDisabled =
+                                  !sessionInfo.permissions.canEditStrategy || isOutOfStock;
+
                                 return (
                                   <button
                                     key={`${driverId}-${stintIndex}-${option}`}
                                     type="button"
-                                    disabled={!sessionInfo.permissions.canEditStrategy}
-                                    className={getPillClassName(isActive, !sessionInfo.permissions.canEditStrategy)}
+                                    disabled={isDisabled}
+                                    className={getPillClassName(isActive, isDisabled)}
                                     onClick={() => {
                                       const nextStints = [...raceStrategy.stints];
                                       nextStints[stintIndex] = option;
@@ -361,7 +516,7 @@ export default function ManagementPage() {
                                       });
                                     }}
                                   >
-                                    {option}
+                                    {option} ({remainingFree}/{totalCount})
                                   </button>
                                 );
                               })}
