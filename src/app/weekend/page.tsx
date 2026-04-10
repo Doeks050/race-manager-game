@@ -14,6 +14,9 @@ export default function WeekendPage() {
     isMounted,
     sessionInfo,
     canAdvanceToNextWeekend,
+    practiceTyreValidation,
+    qualifyingTyreValidation,
+    raceTyreValidation,
     handleSetTraining,
     handleSetStrategy,
     handleRunPractice,
@@ -118,6 +121,9 @@ export default function WeekendPage() {
           }
           permissions={sessionInfo.permissions}
           canAdvanceToNextWeekend={canAdvanceToNextWeekend}
+          practiceTyreValidation={practiceTyreValidation}
+          qualifyingTyreValidation={qualifyingTyreValidation}
+          raceTyreValidation={raceTyreValidation}
           onSetTraining={handleSetTraining}
           onSetStrategy={handleSetStrategy}
           onRunPractice={handleRunPractice}

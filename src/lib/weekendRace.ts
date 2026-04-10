@@ -1,6 +1,6 @@
 import {
   buildRaceStintPlan,
-  normalizeRaceStrategy,
+  normalizeRaceStrategyForRaceLaps,
 } from "@/lib/raceStrategy";
 import type { DriverRaceStrategy } from "@/types/raceStrategy";
 import type {
@@ -159,7 +159,6 @@ function buildStints(
   const practiceAdjustment = buildPracticeAdjustment(practiceBoosts);
 
   const stints: WeekendRaceStint[] = [];
-  let currentLap = 1;
 
   plan.forEach((part, index) => {
     const wearPenalty = index * 140;
@@ -179,14 +178,12 @@ function buildStints(
     stints.push({
       index: index + 1,
       tyreCompoundId: part.tyreCompoundId,
-      startLap: currentLap,
-      endLap: currentLap + part.lapCount - 1,
+      startLap: part.startLap,
+      endLap: part.endLap,
       lapCount: part.lapCount,
       averageLapTimeMs,
       totalTimeMs,
     });
-
-    currentLap += part.lapCount;
   });
 
   return stints;
@@ -242,7 +239,10 @@ export function simulateWeekendRace(
   const raceLaps = getRaceLaps(input.circuitId);
   const baseLapTimeMs = getBaseLapTimeMs(input.circuitId);
   const startPosition = input.qualifyingPosition ?? 12;
-  const normalizedStrategy = normalizeRaceStrategy(input.raceStrategy);
+  const normalizedStrategy = normalizeRaceStrategyForRaceLaps(
+    input.raceStrategy,
+    raceLaps
+  );
 
   const stints = buildStints(
     raceLaps,

@@ -28,6 +28,12 @@ import type {
   WeekendSessionName,
 } from "@/types/weekendSession";
 
+interface SessionTyreValidationProps {
+  canRun: boolean;
+  issue: string | null;
+  requiredByCompound: Record<WeekendTyreCompoundId, number>;
+}
+
 interface WeekendFlowPanelProps {
   weekend: WeekendState<
     WeekendTrainingSelection,
@@ -42,6 +48,9 @@ interface WeekendFlowPanelProps {
   nextSessionLabel: string | null;
   permissions: WeekendPermissions;
   canAdvanceToNextWeekend: boolean;
+  practiceTyreValidation: SessionTyreValidationProps;
+  qualifyingTyreValidation: SessionTyreValidationProps;
+  raceTyreValidation: SessionTyreValidationProps;
   onSetTraining: (driverId: string, training: WeekendTrainingSelection) => void;
   onSetStrategy: (driverId: string, raceStrategy: DriverRaceStrategy) => void;
   onRunPractice: () => void;
@@ -136,6 +145,16 @@ function getRiskClassName(riskLevel: string): string {
   }
 }
 
+function renderRequiredCompounds(
+  requiredByCompound: Record<WeekendTyreCompoundId, number>
+): string {
+  const parts = Object.entries(requiredByCompound)
+    .filter(([, count]) => count > 0)
+    .map(([compound, count]) => `${compound} x${count}`);
+
+  return parts.length > 0 ? parts.join(" · ") : "No compounds required";
+}
+
 export default function WeekendFlowPanel({
   weekend,
   seasonState,
@@ -144,6 +163,9 @@ export default function WeekendFlowPanel({
   nextSessionLabel,
   permissions,
   canAdvanceToNextWeekend,
+  practiceTyreValidation,
+  qualifyingTyreValidation,
+  raceTyreValidation,
   onSetTraining,
   onSetStrategy,
   onRunPractice,
@@ -152,10 +174,17 @@ export default function WeekendFlowPanel({
   onApplyPostRace,
   onAdvanceToNextWeekend,
 }: WeekendFlowPanelProps) {
-  const canRunPractice = DEV_WEEKEND_MODE || (currentSession === "practice" && !weekend.practice.isCompleted);
+  const canRunPractice =
+    (DEV_WEEKEND_MODE || (currentSession === "practice" && !weekend.practice.isCompleted)) &&
+    practiceTyreValidation.canRun;
+
   const canRunQualifying =
-    DEV_WEEKEND_MODE || (currentSession === "qualifying" && !weekend.qualifying.isCompleted);
-  const canRunRace = DEV_WEEKEND_MODE || (currentSession === "race" && !weekend.race.isCompleted);
+    (DEV_WEEKEND_MODE || (currentSession === "qualifying" && !weekend.qualifying.isCompleted)) &&
+    qualifyingTyreValidation.canRun;
+
+  const canRunRace =
+    (DEV_WEEKEND_MODE || (currentSession === "race" && !weekend.race.isCompleted)) &&
+    raceTyreValidation.canRun;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
@@ -584,6 +613,16 @@ export default function WeekendFlowPanel({
           </button>
         </div>
 
+        {!practiceTyreValidation.canRun && (
+          <div className="mt-4 rounded-2xl border border-red-800/60 bg-red-950/20 p-4 text-sm text-red-200">
+            <p className="font-semibold">Practice blocked by tyre stock</p>
+            <p className="mt-1">{practiceTyreValidation.issue}</p>
+            <p className="mt-2 text-red-300">
+              Required: {renderRequiredCompounds(practiceTyreValidation.requiredByCompound)}
+            </p>
+          </div>
+        )}
+
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           {weekend.driverIds.map((driverId) => {
             const result = weekend.practice.resultsByDriver[driverId];
@@ -641,6 +680,16 @@ export default function WeekendFlowPanel({
           </button>
         </div>
 
+        {!qualifyingTyreValidation.canRun && (
+          <div className="mt-4 rounded-2xl border border-red-800/60 bg-red-950/20 p-4 text-sm text-red-200">
+            <p className="font-semibold">Qualifying blocked by tyre stock</p>
+            <p className="mt-1">{qualifyingTyreValidation.issue}</p>
+            <p className="mt-2 text-red-300">
+              Required: {renderRequiredCompounds(qualifyingTyreValidation.requiredByCompound)}
+            </p>
+          </div>
+        )}
+
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           {weekend.driverIds.map((driverId) => {
             const result = weekend.qualifying.resultsByDriver[driverId];
@@ -697,6 +746,16 @@ export default function WeekendFlowPanel({
             {weekend.race.isCompleted ? "Race Completed" : "Run Race"}
           </button>
         </div>
+
+        {!raceTyreValidation.canRun && (
+          <div className="mt-4 rounded-2xl border border-red-800/60 bg-red-950/20 p-4 text-sm text-red-200">
+            <p className="font-semibold">Race blocked by tyre stock</p>
+            <p className="mt-1">{raceTyreValidation.issue}</p>
+            <p className="mt-2 text-red-300">
+              Required: {renderRequiredCompounds(raceTyreValidation.requiredByCompound)}
+            </p>
+          </div>
+        )}
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           {weekend.driverIds.map((driverId) => {

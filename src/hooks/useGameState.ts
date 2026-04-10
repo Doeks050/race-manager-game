@@ -71,6 +71,7 @@ import type { WeekendPracticeResult } from "@/types/weekendPractice"
 import type {
   WeekendQualifyingResult,
   WeekendTrainingSelection,
+  WeekendTyreCompoundId,
 } from "@/types/weekendQualifying"
 import type { WeekendRaceResult } from "@/types/weekendRace"
 import type { WeekendState } from "@/types/weekend"
@@ -82,6 +83,12 @@ export type AppWeekendState = WeekendState<
   WeekendRaceResult,
   WeekendPostRaceResult
 >
+
+type SessionTyreValidation = {
+  canRun: boolean
+  issue: string | null
+  requiredByCompound: Record<WeekendTyreCompoundId, number>
+}
 
 function createInitialWeekend(): AppWeekendState {
   const weekend = createWeekendFromCalendarRound({
@@ -195,6 +202,78 @@ function applySessionCompoundUsageToMap(params: {
   )
 
   return replaceTyreAllocationForEvent(ensuredMap, result.allocation)
+}
+
+function createEmptyRequiredCompoundCounts(): Record<WeekendTyreCompoundId, number> {
+  return {
+    "ultra-soft": 0,
+    "super-soft": 0,
+    soft: 0,
+    medium: 0,
+    hard: 0,
+    intermediate: 0,
+    "full-wet": 0,
+  }
+}
+
+function countRequiredCompounds(
+  compounds: WeekendTyreCompoundId[]
+): Record<WeekendTyreCompoundId, number> {
+  const counts = createEmptyRequiredCompoundCounts()
+
+  for (const compound of compounds) {
+    counts[compound] += 1
+  }
+
+  return counts
+}
+
+function buildSessionTyreValidation(params: {
+  compounds: WeekendTyreCompoundId[]
+  allocation: WeekendTyreAllocation | null
+  sessionLabel: string
+}): SessionTyreValidation {
+  const requiredByCompound = countRequiredCompounds(params.compounds)
+
+  if (!params.allocation) {
+    return {
+      canRun: false,
+      issue: `No tyre allocation found for ${params.sessionLabel}.`,
+      requiredByCompound,
+    }
+  }
+
+  const shortages: string[] = []
+
+  for (const [compound, required] of Object.entries(requiredByCompound) as Array<
+    [WeekendTyreCompoundId, number]
+  >) {
+    if (required <= 0) {
+      continue
+    }
+
+    const available = params.allocation.sets.filter(
+      (set) => set.compound === compound && set.status === "available"
+    ).length
+
+    if (available < required) {
+      shortages.push(`${compound} ${available}/${required}`)
+    }
+  }
+
+  if (shortages.length > 0) {
+    return {
+      canRun: false,
+      issue: `Not enough tyre sets for ${params.sessionLabel}: ${shortages.join(" · ")}`,
+      requiredByCompound,
+    }
+  }
+
+  return {
+    canRun: true,
+    issue: null,
+    requiredByCompound,
+  }
 }
 
 export function useGameState() {
@@ -321,6 +400,58 @@ export function useGameState() {
     return summarizeWeekendTyreAllocation(currentWeekendTyreAllocation)
   }, [currentWeekendTyreAllocation])
 
+  const plannedPracticeCompounds = useMemo<WeekendTyreCompoundId[]>(() => {
+    return weekend.driverIds.map((driverId) => {
+      const setup = weekend.driverSetups[driverId]
+      return setup?.trainingPlan?.compound ?? "medium"
+    })
+  }, [weekend])
+
+  const plannedQualifyingCompounds = useMemo<WeekendTyreCompoundId[]>(() => {
+    return weekend.driverIds.map((driverId) => {
+      const setup = weekend.driverSetups[driverId]
+      return setup?.trainingPlan?.compound ?? "soft"
+    })
+  }, [weekend])
+
+  const plannedRaceCompounds = useMemo<WeekendTyreCompoundId[]>(() => {
+    return weekend.driverIds.flatMap((driverId) => {
+      const setup = weekend.driverSetups[driverId]
+      const strategy = setup?.raceStrategy ?? createDefaultRaceStrategy(2)
+      return strategy.stints
+    })
+  }, [weekend])
+
+  const practiceTyreValidation = useMemo(
+    () =>
+      buildSessionTyreValidation({
+        compounds: plannedPracticeCompounds,
+        allocation: currentWeekendTyreAllocation,
+        sessionLabel: "practice",
+      }),
+    [plannedPracticeCompounds, currentWeekendTyreAllocation]
+  )
+
+  const qualifyingTyreValidation = useMemo(
+    () =>
+      buildSessionTyreValidation({
+        compounds: plannedQualifyingCompounds,
+        allocation: currentWeekendTyreAllocation,
+        sessionLabel: "qualifying",
+      }),
+    [plannedQualifyingCompounds, currentWeekendTyreAllocation]
+  )
+
+  const raceTyreValidation = useMemo(
+    () =>
+      buildSessionTyreValidation({
+        compounds: plannedRaceCompounds,
+        allocation: currentWeekendTyreAllocation,
+        sessionLabel: "race",
+      }),
+    [plannedRaceCompounds, currentWeekendTyreAllocation]
+  )
+
   const summary = useMemo(() => {
     return {
       devMode: DEV_WEEKEND_MODE,
@@ -351,6 +482,9 @@ export function useGameState() {
       raceResults: weekend.race.resultsByDriver,
       currentWeekendTyreAllocation,
       currentWeekendTyreAllocationSummary,
+      practiceTyreValidation,
+      qualifyingTyreValidation,
+      raceTyreValidation,
     }
   }, [
     sessionInfo,
@@ -366,6 +500,9 @@ export function useGameState() {
     hasLoadedSave,
     currentWeekendTyreAllocation,
     currentWeekendTyreAllocationSummary,
+    practiceTyreValidation,
+    qualifyingTyreValidation,
+    raceTyreValidation,
   ])
 
   function handleSetTraining(driverId: string, training: WeekendTrainingSelection) {
@@ -381,15 +518,11 @@ export function useGameState() {
   }
 
   function handleRunPractice() {
-    if (weekend.practice.isCompleted) {
+    if (weekend.practice.isCompleted || !practiceTyreValidation.canRun) {
       return
     }
 
-    const practiceCompounds: TyreType[] = weekend.driverIds.map((driverId) => {
-      const setup = weekend.driverSetups[driverId]
-
-      return setup?.trainingPlan?.compound ?? "medium"
-    })
+    const practiceCompounds: TyreType[] = plannedPracticeCompounds
 
     setWeekend((current: AppWeekendState) => {
       if (current.practice.isCompleted) {
@@ -439,15 +572,11 @@ export function useGameState() {
   }
 
   function handleRunQualifying() {
-    if (weekend.qualifying.isCompleted) {
+    if (weekend.qualifying.isCompleted || !qualifyingTyreValidation.canRun) {
       return
     }
 
-    const qualifyingCompounds: TyreType[] = weekend.driverIds.map((driverId) => {
-      const setup = weekend.driverSetups[driverId]
-
-      return setup?.trainingPlan?.compound ?? "soft"
-    })
+    const qualifyingCompounds: TyreType[] = plannedQualifyingCompounds
 
     setWeekend((current: AppWeekendState) => {
       if (current.qualifying.isCompleted) {
@@ -497,16 +626,11 @@ export function useGameState() {
   }
 
   function handleRunRace() {
-    if (weekend.race.isCompleted) {
+    if (weekend.race.isCompleted || !raceTyreValidation.canRun) {
       return
     }
 
-    const raceCompounds: TyreType[] = weekend.driverIds.flatMap((driverId) => {
-      const setup = weekend.driverSetups[driverId]
-      const strategy = setup?.raceStrategy ?? createDefaultRaceStrategy(2)
-
-      return strategy.stints
-    })
+    const raceCompounds: TyreType[] = plannedRaceCompounds
 
     setWeekend((current: AppWeekendState) => {
       if (current.race.isCompleted) {
@@ -687,6 +811,9 @@ export function useGameState() {
     tyreAllocationsByEventId,
     currentWeekendTyreAllocation,
     currentWeekendTyreAllocationSummary,
+    practiceTyreValidation,
+    qualifyingTyreValidation,
+    raceTyreValidation,
     raceDrivers,
     reserveDrivers,
     derivedCarStats,

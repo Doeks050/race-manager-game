@@ -8,16 +8,73 @@ const DEFAULT_SEQUENCE: WeekendTyreCompoundId[] = [
   "soft",
 ];
 
+const DEFAULT_REFERENCE_RACE_LAPS = 60;
+
 export function getRequiredStintCount(stops: number): number {
   return Math.max(1, stops + 1);
 }
 
+export function getRequiredPitLapCount(stops: number): number {
+  return Math.max(0, stops);
+}
+
+function buildDefaultPitLaps(stops: number, raceLaps: number): number[] {
+  const safeStops = Math.max(0, Math.min(3, stops));
+
+  if (safeStops === 0) {
+    return [];
+  }
+
+  const safeRaceLaps = Math.max(2, raceLaps);
+  const segmentLength = safeRaceLaps / (safeStops + 1);
+  const pitLaps: number[] = [];
+
+  for (let index = 1; index <= safeStops; index += 1) {
+    const lap = Math.round(segmentLength * index);
+    const boundedLap = Math.max(1, Math.min(safeRaceLaps - 1, lap));
+    pitLaps.push(boundedLap);
+  }
+
+  return pitLaps;
+}
+
+function normalizePitLaps(
+  pitLaps: number[] | null | undefined,
+  stops: number,
+  raceLaps: number
+): number[] {
+  const requiredCount = getRequiredPitLapCount(stops);
+
+  if (requiredCount === 0) {
+    return [];
+  }
+
+  if (!pitLaps || pitLaps.length !== requiredCount) {
+    return buildDefaultPitLaps(stops, raceLaps);
+  }
+
+  const sanitized = pitLaps.map((lap) => Math.round(lap));
+
+  for (let index = 0; index < sanitized.length; index += 1) {
+    const lap = sanitized[index];
+    const previousLap = index > 0 ? sanitized[index - 1] : 0;
+
+    if (lap <= previousLap || lap < 1 || lap >= raceLaps) {
+      return buildDefaultPitLaps(stops, raceLaps);
+    }
+  }
+
+  return sanitized;
+}
+
 export function createDefaultRaceStrategy(stops: number = 2): DriverRaceStrategy {
-  const stintCount = getRequiredStintCount(stops);
+  const safeStops = Math.max(0, Math.min(3, stops));
+  const stintCount = getRequiredStintCount(safeStops);
 
   return {
-    stops,
+    stops: safeStops,
     stints: DEFAULT_SEQUENCE.slice(0, stintCount),
+    pitLaps: buildDefaultPitLaps(safeStops, DEFAULT_REFERENCE_RACE_LAPS),
   };
 }
 
@@ -40,12 +97,31 @@ export function normalizeRaceStrategy(
   return {
     stops: safeStops,
     stints: stints.slice(0, requiredCount),
+    pitLaps: normalizePitLaps(strategy.pitLaps, safeStops, DEFAULT_REFERENCE_RACE_LAPS),
+  };
+}
+
+export function normalizeRaceStrategyForRaceLaps(
+  strategy: DriverRaceStrategy | null | undefined,
+  raceLaps: number
+): DriverRaceStrategy {
+  const normalized = normalizeRaceStrategy(strategy);
+  const safeRaceLaps = Math.max(2, raceLaps);
+
+  return {
+    ...normalized,
+    pitLaps: normalizePitLaps(normalized.pitLaps, normalized.stops, safeRaceLaps),
   };
 }
 
 export function formatRaceStrategyLabel(strategy: DriverRaceStrategy): string {
   const normalized = normalizeRaceStrategy(strategy);
-  return `${normalized.stops} stop${normalized.stops === 1 ? "" : "s"} · ${normalized.stints.join(" → ")}`;
+  const pitLabel =
+    normalized.pitLaps.length > 0
+      ? ` · Pit L${normalized.pitLaps.join(" / L")}`
+      : " · No pit stop";
+
+  return `${normalized.stops} stop${normalized.stops === 1 ? "" : "s"} · ${normalized.stints.join(" → ")}${pitLabel}`;
 }
 
 export function getCompoundLapAdjustment(compound: WeekendTyreCompoundId): number {
@@ -73,26 +149,37 @@ export interface StrategyStintPlan {
   tyreCompoundId: WeekendTyreCompoundId;
   lapCount: number;
   lapAdjustmentMs: number;
+  startLap: number;
+  endLap: number;
+  pitLapAfter: number | null;
 }
 
 export function buildRaceStintPlan(
   strategy: DriverRaceStrategy,
   raceLaps: number
 ): StrategyStintPlan[] {
-  const normalized = normalizeRaceStrategy(strategy);
-  const stintCount = normalized.stints.length;
+  const normalized = normalizeRaceStrategyForRaceLaps(strategy, raceLaps);
+  const stints: StrategyStintPlan[] = [];
 
-  const baseLapCount = Math.floor(raceLaps / stintCount);
-  let remainder = raceLaps % stintCount;
+  let startLap = 1;
 
-  return normalized.stints.map((compound) => {
-    const extraLap = remainder > 0 ? 1 : 0;
-    remainder = Math.max(0, remainder - 1);
+  normalized.stints.forEach((compound, index) => {
+    const pitLapAfter =
+      index < normalized.pitLaps.length ? normalized.pitLaps[index] : null;
+    const endLap = pitLapAfter ?? raceLaps;
+    const lapCount = Math.max(1, endLap - startLap + 1);
 
-    return {
+    stints.push({
       tyreCompoundId: compound,
-      lapCount: baseLapCount + extraLap,
+      lapCount,
       lapAdjustmentMs: getCompoundLapAdjustment(compound),
-    };
+      startLap,
+      endLap,
+      pitLapAfter,
+    });
+
+    startLap = endLap + 1;
   });
+
+  return stints;
 }

@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { buildStrategyForecast } from "@/lib/strategyForecast";
-import { formatRaceStrategyLabel, normalizeRaceStrategy } from "@/lib/raceStrategy";
+import {
+  formatRaceStrategyLabel,
+  normalizeRaceStrategy,
+  normalizeRaceStrategyForRaceLaps,
+} from "@/lib/raceStrategy";
 import { formatCountdown, formatSessionLabel } from "@/lib/weekendSession";
 import { useGameState } from "@/hooks/useGameState";
 import type {
@@ -33,6 +37,30 @@ const COMPOUND_OPTIONS: readonly WeekendTyreCompoundId[] = [
 ];
 
 type CompoundCounts = Record<WeekendTyreCompoundId, number>;
+
+type TrainingLike =
+  | {
+      slots: number;
+      trim: WeekendTrainingTrim;
+      skill: WeekendTrainingSkill;
+      compound: WeekendTyreCompoundId;
+    }
+  | null
+  | undefined;
+
+type StrategyLike =
+  | {
+      stops: number;
+      stints: WeekendTyreCompoundId[];
+      pitLaps: number[];
+    }
+  | null
+  | undefined;
+
+type DriverSetupLike = {
+  trainingPlan?: TrainingLike;
+  raceStrategy?: StrategyLike;
+};
 
 function createEmptyCompoundCounts(): CompoundCounts {
   return {
@@ -81,22 +109,7 @@ function incrementCompound(counts: CompoundCounts, compound: WeekendTyreCompound
 
 function countPlannedCompoundUsage(params: {
   driverIds: string[];
-  driverSetups: Record<
-    string,
-    {
-      driverId: string;
-      trainingPlan: {
-        slots: number;
-        trim: WeekendTrainingTrim;
-        skill: WeekendTrainingSkill;
-        compound: WeekendTyreCompoundId;
-      };
-      raceStrategy: {
-        stops: number;
-        stints: WeekendTyreCompoundId[];
-      };
-    }
-  >;
+  driverSetups: Record<string, DriverSetupLike>;
   excludeTrainingDriverId?: string;
   excludeStrategyDriverId?: string;
   excludeStintIndex?: number;
@@ -110,11 +123,14 @@ function countPlannedCompoundUsage(params: {
       continue;
     }
 
-    if (driverId !== params.excludeTrainingDriverId) {
-      counts = incrementCompound(counts, setup.trainingPlan.compound);
+    const trainingPlan = setup.trainingPlan ?? null;
+    const raceStrategy = normalizeRaceStrategy(setup.raceStrategy ?? undefined);
+
+    if (driverId !== params.excludeTrainingDriverId && trainingPlan) {
+      counts = incrementCompound(counts, trainingPlan.compound);
     }
 
-    setup.raceStrategy.stints.forEach((compound, stintIndex) => {
+    raceStrategy.stints.forEach((compound, stintIndex) => {
       const shouldExclude =
         driverId === params.excludeStrategyDriverId && stintIndex === params.excludeStintIndex;
 
@@ -133,6 +149,21 @@ function getAvailableAfterPlannedUsage(
   plannedUsage: CompoundCounts
 ): number {
   return Math.max(0, totalAvailableNow - plannedUsage[compound]);
+}
+
+function clampPitLap(
+  value: number,
+  index: number,
+  raceLaps: number,
+  pitLaps: number[]
+): number {
+  const previousLap = index > 0 ? pitLaps[index - 1] : 0;
+  const nextLap = index < pitLaps.length - 1 ? pitLaps[index + 1] : raceLaps;
+
+  const minLap = Math.max(previousLap + 1, 1);
+  const maxLap = Math.min(nextLap - 1, raceLaps - 1);
+
+  return Math.max(minLap, Math.min(maxLap, value));
 }
 
 export default function ManagementPage() {
@@ -297,7 +328,11 @@ export default function ManagementPage() {
                 compound: "medium" as WeekendTyreCompoundId,
               };
 
-            const raceStrategy = normalizeRaceStrategy(setup?.raceStrategy);
+            const raceStrategy = normalizeRaceStrategyForRaceLaps(
+              setup?.raceStrategy,
+              forecastRaceLapsFromCircuit(weekend.circuitId)
+            );
+
             const forecast = buildStrategyForecast({
               teamId: weekend.teamId,
               driverId,
@@ -309,7 +344,7 @@ export default function ManagementPage() {
 
             const plannedUsageWithoutThisTraining = countPlannedCompoundUsage({
               driverIds: weekend.driverIds,
-              driverSetups: weekend.driverSetups,
+              driverSetups: weekend.driverSetups as Record<string, DriverSetupLike>,
               excludeTrainingDriverId: driverId,
             });
 
@@ -443,16 +478,17 @@ export default function ManagementPage() {
                               type="button"
                               disabled={!sessionInfo.permissions.canEditStrategy}
                               className={getPillClassName(isActive, !sessionInfo.permissions.canEditStrategy)}
-                              onClick={() =>
-                                handleSetStrategy(driverId, {
-                                  ...raceStrategy,
-                                  stops,
-                                  stints: normalizeRaceStrategy({
+                              onClick={() => {
+                                const nextStrategy = normalizeRaceStrategyForRaceLaps(
+                                  {
                                     ...raceStrategy,
                                     stops,
-                                  }).stints,
-                                })
-                              }
+                                  },
+                                  forecast.raceLaps
+                                );
+
+                                handleSetStrategy(driverId, nextStrategy);
+                              }}
                             >
                               {stops} stop{stops === 1 ? "" : "s"}
                             </button>
@@ -473,21 +509,107 @@ export default function ManagementPage() {
                       </div>
                     </div>
 
+                    {raceStrategy.pitLaps.length > 0 && (
+                      <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950 p-3">
+                        <p className="text-sm font-medium text-white">Pit Stop Laps</p>
+                        <p className="mt-1 text-xs text-neutral-500">
+                          Kies exact in welke ronde je naar binnen gaat.
+                        </p>
+
+                        <div className="mt-3 flex flex-col gap-3">
+                          {raceStrategy.pitLaps.map((pitLap, pitIndex) => (
+                            <div
+                              key={`${driverId}-pit-${pitIndex}`}
+                              className="rounded-xl border border-neutral-800 bg-black p-3"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">
+                                    Stop {pitIndex + 1}
+                                  </p>
+                                  <p className="mt-1 text-xs text-neutral-500">
+                                    Pit at end of lap
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={!sessionInfo.permissions.canEditStrategy}
+                                    className={getPillClassName(false, !sessionInfo.permissions.canEditStrategy)}
+                                    onClick={() => {
+                                      const nextPitLaps = [...raceStrategy.pitLaps];
+                                      nextPitLaps[pitIndex] = clampPitLap(
+                                        pitLap - 1,
+                                        pitIndex,
+                                        forecast.raceLaps,
+                                        nextPitLaps
+                                      );
+
+                                      handleSetStrategy(driverId, {
+                                        ...raceStrategy,
+                                        pitLaps: nextPitLaps,
+                                      });
+                                    }}
+                                  >
+                                    -1
+                                  </button>
+
+                                  <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm font-semibold text-white">
+                                    L{pitLap}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    disabled={!sessionInfo.permissions.canEditStrategy}
+                                    className={getPillClassName(false, !sessionInfo.permissions.canEditStrategy)}
+                                    onClick={() => {
+                                      const nextPitLaps = [...raceStrategy.pitLaps];
+                                      nextPitLaps[pitIndex] = clampPitLap(
+                                        pitLap + 1,
+                                        pitIndex,
+                                        forecast.raceLaps,
+                                        nextPitLaps
+                                      );
+
+                                      handleSetStrategy(driverId, {
+                                        ...raceStrategy,
+                                        pitLaps: nextPitLaps,
+                                      });
+                                    }}
+                                  >
+                                    +1
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-4 flex flex-col gap-4">
                       {raceStrategy.stints.map((compound, stintIndex) => {
                         const stintForecast = forecast.stints[stintIndex];
                         const plannedUsageWithoutThisStint = countPlannedCompoundUsage({
                           driverIds: weekend.driverIds,
-                          driverSetups: weekend.driverSetups,
+                          driverSetups: weekend.driverSetups as Record<string, DriverSetupLike>,
                           excludeStrategyDriverId: driverId,
                           excludeStintIndex: stintIndex,
                         });
 
                         return (
                           <div key={`${driverId}-stint-${stintIndex}`} className="rounded-xl border border-neutral-800 bg-neutral-950 p-3">
-                            <p className="mb-2 text-sm font-medium text-white">Stint {stintIndex + 1}</p>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-sm font-medium text-white">Stint {stintIndex + 1}</p>
+                              {stintIndex < raceStrategy.pitLaps.length && (
+                                <p className="text-xs text-neutral-500">
+                                  Pit after lap {raceStrategy.pitLaps[stintIndex]}
+                                </p>
+                              )}
+                            </div>
 
-                            <div className="flex flex-wrap gap-2">
+                            <div className="mt-3 flex flex-wrap gap-2">
                               {COMPOUND_OPTIONS.map((option) => {
                                 const isActive = compound === option;
                                 const availableCount = tyreAvailabilityByCompound[option] ?? 0;
@@ -510,6 +632,7 @@ export default function ManagementPage() {
                                     onClick={() => {
                                       const nextStints = [...raceStrategy.stints];
                                       nextStints[stintIndex] = option;
+
                                       handleSetStrategy(driverId, {
                                         ...raceStrategy,
                                         stints: nextStints,
@@ -566,4 +689,21 @@ export default function ManagementPage() {
       </div>
     </main>
   );
+}
+
+function forecastRaceLapsFromCircuit(circuitId: string): number {
+  switch (circuitId) {
+    case "melbourne":
+      return 58;
+    case "bahrain":
+      return 57;
+    case "jeddah":
+      return 50;
+    case "monza":
+      return 53;
+    case "monaco":
+      return 78;
+    default:
+      return 56;
+  }
 }

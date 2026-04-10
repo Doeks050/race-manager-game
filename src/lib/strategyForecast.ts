@@ -1,4 +1,7 @@
-import { buildRaceStintPlan, normalizeRaceStrategy } from "@/lib/raceStrategy";
+import {
+  buildRaceStintPlan,
+  normalizeRaceStrategyForRaceLaps,
+} from "@/lib/raceStrategy";
 import type { DriverRaceStrategy } from "@/types/raceStrategy";
 import type {
   StrategyForecast,
@@ -356,7 +359,10 @@ export function buildStrategyForecast(input: {
   const circuit = getCircuitProfile(input.circuitId);
   const trainingBonus = getTrainingTyreBonus(input.trainingPlan);
   const weatherWearFactor = getWeatherWearFactor(input.weatherId);
-  const normalizedStrategy = normalizeRaceStrategy(input.raceStrategy);
+  const normalizedStrategy = normalizeRaceStrategyForRaceLaps(
+    input.raceStrategy,
+    circuit.raceLaps
+  );
   const stintPlan = buildRaceStintPlan(normalizedStrategy, circuit.raceLaps);
 
   const stints: StrategyForecastStint[] = stintPlan.map((stint, index) => {
