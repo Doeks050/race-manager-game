@@ -17,6 +17,10 @@ const tyreCompoundNameById: Record<TyreType, string> = tyreCompounds.reduce(
   {} as Record<TyreType, string>
 )
 
+export const WEEKEND_TYRE_SET_CAP =
+  DEFAULT_WEEKEND_TYRE_ALLOCATION_TEMPLATE.dry.reduce((sum, entry) => sum + entry.count, 0) +
+  DEFAULT_WEEKEND_TYRE_ALLOCATION_TEMPLATE.wet.reduce((sum, entry) => sum + entry.count, 0)
+
 function buildTyreSetId(eventId: string, compound: TyreType, index: number): string {
   return `${eventId}-${compound}-${index + 1}`
 }
@@ -59,6 +63,41 @@ export function createWeekendTyreAllocation(
     eventId,
     sets,
   }
+}
+
+export function createWeekendTyreAllocationFromCounts(
+  eventId: string,
+  countsByCompound: Record<TyreType, number>
+): WeekendTyreAllocation {
+  const sets: WeekendTyreSet[] = []
+
+  tyreCompounds.forEach((compound) => {
+    const count = Math.max(0, Math.floor(countsByCompound[compound.id] ?? 0))
+
+    for (let index = 0; index < count; index += 1) {
+      sets.push(buildTyreSet(eventId, compound.id, index))
+    }
+  })
+
+  return {
+    eventId,
+    sets,
+  }
+}
+
+export function countTyreSetsInAllocation(allocation: WeekendTyreAllocation): number {
+  return allocation.sets.length
+}
+
+export function getTyreCountsByCompound(
+  allocation: WeekendTyreAllocation
+): Record<TyreType, number> {
+  return tyreCompounds.reduce((accumulator, compound) => {
+    accumulator[compound.id] = allocation.sets.filter(
+      (set) => set.compound === compound.id
+    ).length
+    return accumulator
+  }, {} as Record<TyreType, number>)
 }
 
 export function createTyreAllocationMapForWeekend(weekend: { id: string }): WeekendTyreAllocationMap {

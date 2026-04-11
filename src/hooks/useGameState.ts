@@ -31,12 +31,16 @@ import { simulateWeekendRace } from "@/lib/weekendRace"
 import { DEV_WEEKEND_MODE, getWeekendSessionInfo } from "@/lib/weekendSession"
 import {
   applyMultipleCompoundUsageToAllocation,
+  countTyreSetsInAllocation,
   createTyreAllocationMapForWeekend,
   createWeekendTyreAllocation,
+  createWeekendTyreAllocationFromCounts,
   ensureTyreAllocationForEvent,
   getTyreAllocationForEvent,
+  getTyreCountsByCompound,
   replaceTyreAllocationForEvent,
   summarizeWeekendTyreAllocation,
+  WEEKEND_TYRE_SET_CAP,
 } from "@/lib/tyreAllocation"
 import {
   applyPostRaceDriverWear,
@@ -400,6 +404,22 @@ export function useGameState() {
     return summarizeWeekendTyreAllocation(currentWeekendTyreAllocation)
   }, [currentWeekendTyreAllocation])
 
+  const canEditWeekendTyreLoadout = useMemo(() => {
+    return (
+      !weekend.practice.isCompleted &&
+      !weekend.qualifying.isCompleted &&
+      !weekend.race.isCompleted
+    )
+  }, [weekend])
+
+  const weekendSelectedTyreSetCount = useMemo(() => {
+    if (!currentWeekendTyreAllocation) {
+      return 0
+    }
+
+    return countTyreSetsInAllocation(currentWeekendTyreAllocation)
+  }, [currentWeekendTyreAllocation])
+
   const plannedPracticeCompounds = useMemo<WeekendTyreCompoundId[]>(() => {
     return weekend.driverIds.map((driverId) => {
       const setup = weekend.driverSetups[driverId]
@@ -485,6 +505,9 @@ export function useGameState() {
       practiceTyreValidation,
       qualifyingTyreValidation,
       raceTyreValidation,
+      canEditWeekendTyreLoadout,
+      weekendSelectedTyreSetCount,
+      weekendTyreSetCap: WEEKEND_TYRE_SET_CAP,
     }
   }, [
     sessionInfo,
@@ -503,6 +526,8 @@ export function useGameState() {
     practiceTyreValidation,
     qualifyingTyreValidation,
     raceTyreValidation,
+    canEditWeekendTyreLoadout,
+    weekendSelectedTyreSetCount,
   ])
 
   function handleSetTraining(driverId: string, training: WeekendTrainingSelection) {
@@ -515,6 +540,41 @@ export function useGameState() {
     setWeekend((current: AppWeekendState) =>
       setWeekendDriverStrategy(current, driverId, raceStrategy) as AppWeekendState
     )
+  }
+
+  function handleAdjustWeekendTyreCompound(compound: WeekendTyreCompoundId, delta: number) {
+    if (!canEditWeekendTyreLoadout || delta === 0) {
+      return
+    }
+
+    setTyreAllocationsByEventId((current) => {
+      const ensured = ensureTyreAllocationForEvent(current, weekend.id)
+      const allocation =
+        getTyreAllocationForEvent(ensured, weekend.id) ?? createWeekendTyreAllocation(weekend.id)
+
+      const countsByCompound = getTyreCountsByCompound(allocation)
+      const currentCount = countsByCompound[compound] ?? 0
+      const nextCount = currentCount + delta
+
+      if (nextCount < 0) {
+        return ensured
+      }
+
+      const currentTotal = countTyreSetsInAllocation(allocation)
+      const nextTotal = currentTotal + delta
+
+      if (nextTotal < 0 || nextTotal > WEEKEND_TYRE_SET_CAP) {
+        return ensured
+      }
+
+      const nextCounts = {
+        ...countsByCompound,
+        [compound]: nextCount,
+      }
+
+      const nextAllocation = createWeekendTyreAllocationFromCounts(weekend.id, nextCounts)
+      return replaceTyreAllocationForEvent(ensured, nextAllocation)
+    })
   }
 
   function handleRunPractice() {
@@ -823,9 +883,13 @@ export function useGameState() {
     hasLoadedSave,
     sessionInfo,
     canAdvanceToNextWeekend,
+    canEditWeekendTyreLoadout,
+    weekendSelectedTyreSetCount,
+    weekendTyreSetCap: WEEKEND_TYRE_SET_CAP,
     summary,
     handleSetTraining,
     handleSetStrategy,
+    handleAdjustWeekendTyreCompound,
     handleRunPractice,
     handleRunQualifying,
     handleRunRace,

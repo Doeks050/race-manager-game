@@ -4,7 +4,6 @@ import Link from "next/link";
 import { buildStrategyForecast } from "@/lib/strategyForecast";
 import {
   formatRaceStrategyLabel,
-  normalizeRaceStrategy,
   normalizeRaceStrategyForRaceLaps,
 } from "@/lib/raceStrategy";
 import { formatCountdown, formatSessionLabel } from "@/lib/weekendSession";
@@ -124,7 +123,10 @@ function countPlannedCompoundUsage(params: {
     }
 
     const trainingPlan = setup.trainingPlan ?? null;
-    const raceStrategy = normalizeRaceStrategy(setup.raceStrategy ?? undefined);
+    const raceStrategy = normalizeRaceStrategyForRaceLaps(
+      setup.raceStrategy,
+      forecastRaceLapsFromCircuit("default")
+    );
 
     if (driverId !== params.excludeTrainingDriverId && trainingPlan) {
       counts = incrementCompound(counts, trainingPlan.compound);
@@ -166,6 +168,23 @@ function clampPitLap(
   return Math.max(minLap, Math.min(maxLap, value));
 }
 
+function forecastRaceLapsFromCircuit(circuitId: string): number {
+  switch (circuitId) {
+    case "melbourne":
+      return 58;
+    case "bahrain":
+      return 57;
+    case "jeddah":
+      return 50;
+    case "monza":
+      return 53;
+    case "monaco":
+      return 78;
+    default:
+      return 56;
+  }
+}
+
 export default function ManagementPage() {
   const {
     weekend,
@@ -175,8 +194,12 @@ export default function ManagementPage() {
     isMounted,
     sessionInfo,
     currentWeekendTyreAllocationSummary,
+    canEditWeekendTyreLoadout,
+    weekendSelectedTyreSetCount,
+    weekendTyreSetCap,
     handleSetTraining,
     handleSetStrategy,
+    handleAdjustWeekendTyreCompound,
     handleResetWeekend,
   } = useGameState();
 
@@ -258,6 +281,75 @@ export default function ManagementPage() {
         <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
+              <p className="text-sm font-semibold text-white">Pre-Weekend Tyre Loadout</p>
+              <p className="mt-1 text-sm text-neutral-400">
+                Kies vóór de eerste sessie welke sets je meeneemt naar dit weekend.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-neutral-800 bg-black px-3 py-2 text-sm text-neutral-300">
+              Selected {weekendSelectedTyreSetCount} / {weekendTyreSetCap}
+            </div>
+          </div>
+
+          {!canEditWeekendTyreLoadout && (
+            <div className="mt-4 rounded-2xl border border-orange-800/60 bg-orange-950/20 p-4 text-sm text-orange-200">
+              Weekend tyre loadout is now locked because at least one session has already been completed.
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {currentWeekendTyreAllocationSummary.map((row) => {
+              const canDecrease = canEditWeekendTyreLoadout && row.total > 0;
+              const canIncrease =
+                canEditWeekendTyreLoadout && weekendSelectedTyreSetCount < weekendTyreSetCap;
+
+              return (
+                <div
+                  key={row.compound}
+                  className="rounded-2xl border border-neutral-800 bg-black p-4"
+                >
+                  <p className="text-sm font-semibold text-white">{row.label}</p>
+                  <p className="mt-2 text-sm text-neutral-300">
+                    Weekend sets selected: <span className="text-white">{row.total}</span>
+                  </p>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!canDecrease}
+                      className={getPillClassName(false, !canDecrease)}
+                      onClick={() => handleAdjustWeekendTyreCompound(row.compound, -1)}
+                    >
+                      -1
+                    </button>
+
+                    <div className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm font-semibold text-white">
+                      {row.total}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={!canIncrease}
+                      className={getPillClassName(false, !canIncrease)}
+                      onClick={() => handleAdjustWeekendTyreCompound(row.compound, 1)}
+                    >
+                      +1
+                    </button>
+                  </div>
+
+                  <p className="mt-3 text-xs text-neutral-500">
+                    After sessions start, this loadout locks.
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
               <p className="text-sm font-semibold text-white">Weekend Tyre Stock</p>
               <p className="mt-1 text-sm text-neutral-400">
                 Dit zijn je resterende sets voor het huidige weekend.
@@ -328,9 +420,10 @@ export default function ManagementPage() {
                 compound: "medium" as WeekendTyreCompoundId,
               };
 
+            const raceLaps = forecastRaceLapsFromCircuit(weekend.circuitId);
             const raceStrategy = normalizeRaceStrategyForRaceLaps(
               setup?.raceStrategy,
-              forecastRaceLapsFromCircuit(weekend.circuitId)
+              raceLaps
             );
 
             const forecast = buildStrategyForecast({
@@ -689,21 +782,4 @@ export default function ManagementPage() {
       </div>
     </main>
   );
-}
-
-function forecastRaceLapsFromCircuit(circuitId: string): number {
-  switch (circuitId) {
-    case "melbourne":
-      return 58;
-    case "bahrain":
-      return 57;
-    case "jeddah":
-      return 50;
-    case "monza":
-      return 53;
-    case "monaco":
-      return 78;
-    default:
-      return 56;
-  }
 }
